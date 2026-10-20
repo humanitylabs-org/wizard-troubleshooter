@@ -11,8 +11,9 @@ NATIVE = 'wizard-l3-troubleshooter-native-canary'
 COMPOSE = D + ['compose', '-p', 'wizard-l3-troubleshooter-canary', '-f', str(ROOT / 'runtipi/docker-compose.yml')]
 
 def run(args):
-    p = subprocess.run(args, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True)
+    p = subprocess.run(args, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     print(p.stdout, end='')
+    p.check_returncode()
     return p.stdout.strip()
 
 probe = r'''
@@ -33,7 +34,7 @@ import fs from 'node:fs';
 const fake='/tmp/fake-model';
 const ack='SYNTHETIC MODEL ACK - NO HOST REPAIR PERFORMED';
 const events=[{type:'system',subtype:'init',session_id:'synthetic'},{type:'assistant',message:{content:[{type:'text',text:ack}]}},{type:'result',session_id:'synthetic',is_error:false}];
-fs.writeFileSync(fake,'#!/bin/sh\n'+events.map(x=>"printf '%s\\n' '"+JSON.stringify(x)+"'").join('\n')+'\n',{mode:0o700});
+fs.writeFileSync(fake,'#!/usr/local/bin/node\nconst events='+JSON.stringify(events)+';\nfor(const e of events)console.log(JSON.stringify(e));\n',{mode:0o700});
 const base='http://127.0.0.1:9691/troubleshoot';
 for(let i=0;i<60;i++){try{await fetch(base+'/api/ping');break}catch{await new Promise(r=>setTimeout(r,100))}}
 const ping=await fetch(base+'/api/ping');
