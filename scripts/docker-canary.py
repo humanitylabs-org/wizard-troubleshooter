@@ -31,7 +31,7 @@ console.log(JSON.stringify({isolatedRecipe:{ping:200,ready:ready.status,repair:b
 '''
 native = r'''
 import fs from 'node:fs';
-const fake='/tmp/fake-model';
+const fake='/state/fake-model';
 const ack='SYNTHETIC MODEL ACK - NO HOST REPAIR PERFORMED';
 const events=[{type:'system',subtype:'init',session_id:'synthetic'},{type:'assistant',message:{content:[{type:'text',text:ack}]}},{type:'result',session_id:'synthetic',is_error:false}];
 fs.writeFileSync(fake,'#!/usr/local/bin/node\nconst events='+JSON.stringify(events)+';\nfor(const e of events)console.log(JSON.stringify(e));\n',{mode:0o700});
@@ -45,7 +45,7 @@ if(response.status!==202)throw Error('chat not accepted');
 const {id}=await response.json();
 let result;
 for(let i=0;i<100;i++){result=await (await fetch(base+'/api/repair/'+id)).json();if(!result.running)break;await new Promise(r=>setTimeout(r,100));}
-if(result.running||!result.events.some(x=>x.text===ack))throw Error('fake chat reply missing');
+if(result.running||!result.events.some(x=>x.text===ack))throw Error('fake chat reply missing: '+JSON.stringify(result));
 console.log(JSON.stringify({nativeFakeTransport:{ping:ping.status,status:health.status,repair:response.status,complete:!result.running,syntheticReply:true,hostRepaired:false}}));
 '''
 try:
@@ -53,7 +53,7 @@ try:
     run(COMPOSE + ['up', '-d'])
     cid = run(COMPOSE + ['ps', '-q', 'wizard-troubleshooter']).splitlines()[-1]
     run(D + ['exec', cid, 'node', '--input-type=module', '-e', probe])
-    run(D + ['run', '-d', '--name', NATIVE, '--read-only', '--tmpfs', '/tmp:rw,nosuid,size=64m,uid=1000,gid=1000', '--tmpfs', '/state:rw,nosuid,size=64m,uid=1000,gid=1000', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '-e', 'TROUBLESHOOT_CONTAINER=0', '-e', 'TROUBLESHOOT_DEV_NO_AUTH=1', '-e', 'CLAUDE_BIN=/tmp/fake-model', IMAGE])
+    run(D + ['run', '-d', '--name', NATIVE, '--read-only', '--tmpfs', '/tmp:rw,nosuid,size=64m,uid=1000,gid=1000', '--tmpfs', '/state:rw,nosuid,exec,size=64m,uid=1000,gid=1000', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '-e', 'TROUBLESHOOT_CONTAINER=0', '-e', 'TROUBLESHOOT_DEV_NO_AUTH=1', '-e', 'CLAUDE_BIN=/state/fake-model', IMAGE])
     run(D + ['exec', NATIVE, 'node', '--input-type=module', '-e', native])
     print(json.dumps({'result': 'PASS', 'freshBoxAccepted': False, 'realModelUsed': False, 'liveServicesChanged': False}))
 finally:
