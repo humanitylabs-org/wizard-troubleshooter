@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Troubleshooter · Wizard</title>
+<style>
+:root {
+  --bg: var(--wz-bg, #0b0d12); --surface: var(--wz-surface, #151922); --surface2: var(--wz-surface-2, #1c2130);
+  --text: var(--wz-text, #e8eaf0); --muted: var(--wz-text-muted, #9aa3b5); --line: var(--wz-border, #262c3a);
+  --accent: var(--wz-accent, #8ab4ff); --ok: #4cc38a; --warn: #e5b454; --bad: #ef6b6b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+body.hosted { background: transparent; }
+main { max-width: 760px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px 48px; }
+header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+header h1 { font-size: 20px; margin: 0; flex: 1; }
+a.back { color: var(--accent); text-decoration: none; font-weight: 600; padding: 8px 0; }
+.hero { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+.hero .big { font-size: 18px; font-weight: 650; display: flex; gap: 10px; align-items: center; }
+.hero .sub { color: var(--muted); margin-top: 6px; }
+.dot { width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--muted); }
+.dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 4px 8px; font-weight: 650; }
+.list { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.row { display: flex; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--line); align-items: flex-start; }
+.row:first-child { border-top: 0; }
+.row .dot { margin-top: 5px; }
+.row .main { flex: 1; min-width: 0; }
+.row .label { font-weight: 600; }
+.row .detail { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.row .explain { color: var(--muted); font-size: 13px; margin-top: 4px; }
+button { font: inherit; border-radius: 10px; border: 1px solid var(--line); background: var(--surface2); color: var(--text); padding: 8px 12px; cursor: pointer; }
+button.primary { background: var(--accent); color: #0b0d12; border-color: transparent; font-weight: 650; }
+button:disabled { opacity: .5; cursor: default; }
+.fixes { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; }
+.chat { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px; }
+.chat .intro { color: var(--muted); font-size: 14px; margin: 0 2px 10px; }
+.log { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto; margin-bottom: 10px; }
+.log:empty { display: none; }
+.msg { padding: 9px 12px; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.owner { align-self: flex-end; background: var(--surface2); max-width: 85%; }
+.msg.agent { background: transparent; border: 1px solid var(--line); }
+.msg.agent .who { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.msg.tool, .msg.status, .msg.note { font-size: 13px; color: var(--muted); padding: 2px 4px; }
+.msg.tool::before { content: "› "; }
+textarea { width: 100%; min-height: 84px; resize: vertical; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.bar { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.bar .grow { flex: 1; }
+select { font: inherit; color: var(--text); background: var(--surface2); border: 1px solid var(--line); border-radius: 10px; padding: 7px 8px; }
+.acct { font-size: 13px; color: var(--muted); }
+.past button { display: block; width: 100%; text-align: left; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; padding: 10px 14px; }
+.past button:first-child { border-top: 0; }
+.small { font-size: 13px; color: var(--muted); }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--surface2); border: 1px solid var(--line); padding: 10px 14px; border-radius: 12px; max-width: 90vw; display: none; }
+.spin { width: 14px; height: 14px; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: s 0.9s linear infinite; display: inline-block; vertical-align: -2px; }
+@keyframes s { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <a class="back" id="back" href="/wizard-os-home/">‹ Wizard</a>
+    <h1>Troubleshooter</h1>
+    <button id="refresh" type="button" aria-label="Check again">Check again</button>
+  </header>
+
+  <section class="hero" aria-live="polite">
+    <div class="big"><span class="dot" id="heroDot"></span><span id="heroText">Checking Wizard…</span></div>
+    <div class="sub" id="heroSub">This page works even when Wizard's chat doesn't. It checks every link between your device and your agent.</div>
+  </section>
+
+  <h2>Connection to your agent</h2>
+  <div class="list" id="checks"></div>
+  <div class="list" id="fixes" style="margin-top:10px;display:none"></div>
+
+  <h2>Get help fixing it</h2>
+  <div class="chat">
+    <p class="intro">Talk directly to your Claude or ChatGPT subscription, skipping Wizard's own services. It can look at what's wrong and restart or repair things on your server.</p>
+    <div class="log" id="log"></div>
+    <textarea id="input" placeholder="What's wrong? For example: my messages won't send."></textarea>
+    <div class="bar">
+      <select id="engine" aria-label="Who to ask">
+        <option value="auto">Claude, then ChatGPT</option>
+        <option value="claude">Claude</option>
+        <option value="chatgpt">ChatGPT</option>
+      </select>
+      <span class="grow acct" id="acct"></span>
+      <button id="newChat" type="button" style="display:none">New</button>
+      <button id="stop" type="button" style="display:none">Stop</button>
+      <button id="send" type="button" class="primary">Fix it</button>
+    </div>
+  </div>
+
+  <div id="pastWrap" style="display:none">
+    <h2>Earlier repairs</h2>
+    <div class="list past" id="past"></div>
+  </div>
+
+  <h2>What happened recently</h2>
+  <div class="list" id="incidents"><div class="row"><div class="main small">Nothing yet.</div></div></div>
+</main>
+<div class="toast" id="toast" role="status"></div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const H = { 'Content-Type': 'application/json', 'X-Wizard-Troubleshoot': '1' };
+  if (window.self !== window.top) { document.body.classList.add('hosted'); }
+  // Back: in Wizard's own window go back in history when it came from Wizard; otherwise open Wizard home.
+  $('back').addEventListener('click', e => {
+    if (document.referrer && new URL(document.referrer).origin === location.origin && history.length > 1) { e.preventDefault(); history.back(); }
+  });
+  const toast = msg => { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 5000); };
+  async function api(path, opts = {}) {
+    const r = await fetch('/troubleshoot/api/' + path, { cache: 'no-store', credentials: 'same-origin', ...opts });
+    let j = {}; try { j = await r.json(); } catch {}
+    if (!r.ok) throw Object.assign(new Error(j.error || j.detail || ('HTTP ' + r.status)), { body: j });
+    return j;
+  }
+  let actions = {}, lastStatus = null;
+  const when = iso => { const d = new Date(iso); return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+
+  function paintStatus(s) {
+    lastStatus = s; actions = s.actions || actions;
+    const bad = s.checks.filter(c => !c.ok);
+    $('heroDot').className = 'dot ' + (s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'warn' : 'bad');
+    $('heroText').textContent = s.overall === 'ok' ? 'Wizard is working.' : bad.length === 1 ? bad[0].label + ' has a problem.' : bad.length + ' parts of Wizard have problems.';
+    $('heroSub').textContent = s.overall === 'ok'
+      ? 'Every link between your device and your agent answered just now. If something still isn\'t working, describe it below.'
+      : 'Wizard tries to fix this by itself within a couple of minutes. You can also fix it now with the buttons below, or ask for help.';
+    $('checks').innerHTML = s.checks.map(c => {
+      const fix = !c.ok && actions['restart:' + c.id] ? `<button type="button" data-act="restart:${esc(c.id)}">${esc(actions['restart:' + c.id].label)}</button>` : '';
+      const undo = !c.ok && c.rollback ? ` <button type="button" data-act="rollback:${esc(c.id)}">Undo last update</button>` : '';
+      return `<div class="row"><span class="dot ${c.ok ? (c.slow ? 'warn' : 'ok') : 'bad'}"></span><div class="main"><div class="label">${esc(c.label)}</div><div class="detail">${esc(c.detail)}</div>${c.ok ? '' : `<div class="explain">${esc(c.explain)}</div>`}${fix || undo ? `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${fix}${undo}</div>` : ''}</div></div>`;
+    }).join('');
+    // Always-available fixes (collapsed when healthy).
+    const all = Object.entries(actions);
+    $('fixes').style.display = all.length ? '' : 'none';
+    $('fixes').innerHTML = `<details style="width:100%"><summary style="padding:12px 14px;cursor:pointer">More fixes</summary><div class="fixes">${all.map(([k, a]) => `<button type="button" data-act="${esc(k)}">${esc(a.label)}</button>`).join('')}</div></details>`;
+    if (s.accounts) $('acct').textContent = s.accounts.map(a => `${a.label.replace(' subscription', '')}: ${a.ok ? 'ready' : 'signed out'}`).join(' · ');
+    if (s.repair && !current) openConv(s.repair.convId);
+  }
+  async function refresh(fresh, accounts) {
+    try { paintStatus(await api('status?' + (fresh ? 'fresh=1&' : '') + (accounts ? 'accounts=1' : ''))); }
+    catch (e) { $('heroDot').className = 'dot bad'; $('heroText').textContent = 'The Troubleshooter itself can\'t check right now.'; $('heroSub').textContent = e.message; }
+    loadIncidents();
+  }
+  async function loadIncidents() {
+    try {
+      const { incidents } = await api('incidents');
+      const shown = incidents.filter(i => ['auto-fix', 'auto-fix-result', 'outage', 'recovered', 'owner-action-result', 'repair-started'].includes(i.kind)).slice(0, 12);
+      if (!shown.length) return;
+      $('incidents').innerHTML = shown.map(i => `<div class="row"><span class="dot ${i.ok === false || i.kind === 'outage' ? 'bad' : 'ok'}"></span><div class="main"><div class="detail">${esc(i.text || i.detail || i.kind)}</div><div class="small">${esc(when(i.at))}</div></div></div>`).join('');
+    } catch {}
+  }
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const a = actions[b.dataset.act] || {};
+    if (!confirm(`${a.label || b.textContent}?${a.warn ? '\n\n' + a.warn : ''}`)) return;
+    b.disabled = true; const old = b.innerHTML; b.innerHTML = '<span class="spin"></span> Working…';
+    try { const r = await api('action', { method: 'POST', headers: H, body: JSON.stringify({ action: b.dataset.act }) }); toast(r.detail); paintStatus(r.status); }
+    catch (err) { toast(err.message); }
+    finally { b.disabled = false; b.innerHTML = old; loadIncidents(); }
+  });
+  $('refresh').addEventListener('click', () => refresh(true, true));
+
+  // Repair conversation
+  let current = null, seq = 0, polling = 0;
+  const log = $('log');
+  function paintEvent(ev) {
+    const d = document.createElement('div');
+    if (ev.type === 'text') { d.className = 'msg ' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="who">${ev.engine === 'chatgpt' ? 'ChatGPT' : 'Claude'}</div>${esc(ev.text)}` : esc(ev.text); }
+    else if (ev.type === 'tool') { d.className = 'msg tool'; d.textContent = ev.text; }
+    else if (ev.type === 'status' || ev.type === 'note') { d.className = 'msg ' + ev.type; d.textContent = ev.text; }
+    else return;
+    log.appendChild(d); log.scrollTop = log.scrollHeight;
+  }
+  function setRunning(on) {
+    $('send').disabled = on; $('stop').style.display = on ? '' : 'none';
+    $('send').innerHTML = on ? '<span class="spin"></span> Working…' : (current ? 'Send' : 'Fix it');
+    $('newChat').style.display = current && !on ? '' : 'none';
+  }
+  async function poll() {
+    if (!current) return;
+    try {
+      const r = await api(`repair/${current}?since=${seq}`);
+      for (const ev of r.events) { seq = ev.seq; paintEvent(ev); }
+      setRunning(r.running);
+      if (r.running) { polling = setTimeout(poll, 1500); return; }
+      refresh(true); loadPast();
+    } catch { polling = setTimeout(poll, 4000); }
+  }
+  function openConv(id) { clearTimeout(polling); current = id; seq = 0; log.innerHTML = ''; history.replaceState(null, '', '#r=' + id); poll(); }
+  $('send').addEventListener('click', async () => {
+    const message = $('input').value.trim();
+    if (!message) { $('input').focus(); return; }
+    const status = lastStatus && lastStatus.overall !== 'ok' ? `\n\n[Troubleshooter status: ${lastStatus.summary}]` : '';
+    setRunning(true);
+    try {
+      const r = await api('repair', { method: 'POST', headers: H, body: JSON.stringify({ id: current, message: message + status, engine: $('engine').value }) });
+      $('input').value = '';
+      if (r.id !== current) openConv(r.id); else poll();
+    } catch (e) { toast(e.message); setRunning(false); }
+  });
+  $('stop').addEventListener('click', () => api('repair/stop', { method: 'POST', headers: H, body: '{}' }).catch(e => toast(e.message)));
+  $('newChat').addEventListener('click', () => { clearTimeout(polling); current = null; seq = 0; log.innerHTML = ''; history.replaceState(null, '', location.pathname); setRunning(false); });
+  async function loadPast() {
+    try {
+      const { repairs } = await api('repairs');
+      const others = repairs.filter(r => r.id !== current).slice(0, 6);
+      $('pastWrap').style.display = others.length ? '' : 'none';
+      $('past').innerHTML = others.map(r => `<button type="button" data-conv="${esc(r.id)}">${esc(r.title)}<div class="small">${esc(when(r.updatedAt))}${r.origin === 'guardian' ? ' · started automatically' : ''}</div></button>`).join('');
+    } catch {}
+  }
+  $('past').addEventListener('click', e => { const b = e.target.closest('[data-conv]'); if (b) { openConv(b.dataset.conv); scrollTo({ top: 0 }); } });
+
+  const m = location.hash.match(/r=([a-f0-9]{16})/);
+  if (m) openConv(m[1]);
+  refresh(false, true); loadPast();
+  setInterval(() => { if (!document.hidden) refresh(false); }, 20000);
+})();
+</script>
+</body>
+</html>

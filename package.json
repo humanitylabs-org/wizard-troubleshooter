@@ -1,0 +1,8 @@
+{
+  "name": "wizard-troubleshooter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Wizard's backup line: health checks, one-tap fixes, a guardian that repairs broken links, and a direct Claude/ChatGPT repair chat that bypasses the Agent Service and Hermes.",
+  "scripts": { "start": "node server.mjs", "status": "node bin/status.mjs --accounts", "test": "node --test tests/troubleshooter.test.mjs" }
+}
