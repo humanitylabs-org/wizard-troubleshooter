@@ -19,7 +19,7 @@ function guardianToken() {
 
 const PORT = +(process.env.PORT || 9691);
 const PREFIX = '/troubleshoot';
-const ORIGINS = new Set(String(process.env.WIZARD_PRIVATE_ORIGINS || 'https://wizard.tailc0f369.ts.net').split(',').map(s => s.trim()));
+const ORIGINS = new Set(String(process.env.WIZARD_PRIVATE_ORIGINS || (process.env.WIZARD_PUBLIC_NAME ? `https://${process.env.WIZARD_PUBLIC_NAME}` : '')).split(',').map(s => s.trim()).filter(Boolean));
 const PAGE = path.join(path.dirname(new URL(import.meta.url).pathname), 'web/index.html');
 const DEV_OPEN = process.env.TROUBLESHOOT_DEV_NO_AUTH === '1'; // local tests only
 

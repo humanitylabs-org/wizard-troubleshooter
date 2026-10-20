@@ -5,7 +5,7 @@ misbehaving, and you are how it gets fixed. Your job is to get Wizard working ag
 
 ## How Wizard is wired on this server (user systemd units unless noted)
 - `tailscale-private-gateway.service` — server side of the private Tailscale network
-  (`tailscale --socket=/run/user/1000/tailscale-private-gateway.sock status`).
+  (`tailscale --socket=$XDG_RUNTIME_DIR/tailscale-private-gateway.sock status`).
 - `private-gateway-https.service` — Caddy HTTPS gateway, config `~/.config/private-gateway/Caddyfile`
   (validate with `~/.local/bin/caddy-private-gateway validate --config <file> --adapter caddyfile` before any restart).
 - `private-tailnet-auth.service` — device sign-in check on 127.0.0.1:19447.

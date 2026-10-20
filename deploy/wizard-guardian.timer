@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Wizard Guardian every minute
+
+[Timer]
+OnBootSec=60
+OnUnitInactiveSec=60
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Wizard Troubleshooter (/troubleshoot/): direct Claude/ChatGPT repair chat, health checks, one-tap fixes
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/apps/wizard-troubleshooter
+ExecStart=%h/.local/bin/node %h/apps/wizard-troubleshooter/server.mjs
+Environment=PORT=9691
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Host values go in a drop-in: Environment=WIZARD_PUBLIC_NAME=<your-wizard>.<tailnet>.ts.net
+Restart=always
+RestartSec=2
+MemoryMax=2G
+
+[Install]
+WantedBy=default.target
