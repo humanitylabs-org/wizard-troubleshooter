@@ -16,6 +16,10 @@
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 body { display: flex; flex-direction: column; height: 100dvh; }
 body.hosted { background: transparent; }
+/* Inside a Wizard window the window's own title bar and Back handle navigation; a page link back to the shell would load the shell inside this frame. */
+body.hosted a.back { display: none; }
+html:has(> body.hosted) { background: transparent; }
+body.hosted header { padding-top: 10px; }
 header { flex: none; display: flex; align-items: center; gap: 10px; padding: max(10px, env(safe-area-inset-top)) 14px 10px; border-bottom: 1px solid var(--line); }
 header h1 { font-size: 17px; margin: 0; flex: 1; }
 a.back { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 22px; padding: 0 6px 2px 2px; }
