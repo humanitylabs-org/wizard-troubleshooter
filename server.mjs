@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { CONFIG, runChecks, accountChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease } from './lib/checks.mjs';
 import { startRepair, loadConv, listConvs, busy, stopRepair } from './lib/repair.mjs';
+import { appRpc, containerReadiness } from './lib/app-component.mjs';
 
 function guardianToken() {
   const f = path.join(CONFIG.stateDir, 'guardian.token');
@@ -22,6 +23,7 @@ const PREFIX = '/troubleshoot';
 const ORIGINS = new Set(String(process.env.WIZARD_PRIVATE_ORIGINS || (process.env.WIZARD_PUBLIC_NAME ? `https://${process.env.WIZARD_PUBLIC_NAME}` : '')).split(',').map(s => s.trim()).filter(Boolean));
 const PAGE = path.join(path.dirname(new URL(import.meta.url).pathname), 'web/index.html');
 const DEV_OPEN = process.env.TROUBLESHOOT_DEV_NO_AUTH === '1'; // local tests only
+const ISOLATED_APP = process.env.TROUBLESHOOT_CONTAINER === '1';
 
 function validPeer(ip) {
   return net.isIP(ip) === 4 ? /^100\./.test(ip) && +ip.split('.')[1] >= 64 && +ip.split('.')[1] <= 127
@@ -85,6 +87,21 @@ const server = http.createServer(async (req, res) => {
     if (!p.startsWith(PREFIX)) return send(res, 404, { error: 'Not found' });
     p = p.slice(PREFIX.length) || '/';
 
+    // Fail closed before guardian/DEV_OPEN: app installation is not host authority.
+    // These answers reveal no local paths, account names or diagnostic history.
+    if (ISOLATED_APP) {
+      if (req.method === 'GET' && p === '/api/ping') return send(res, 200, { ok: true, ...containerReadiness() });
+      if (req.method === 'GET' && p === '/api/readiness') return send(res, 503, containerReadiness());
+      if (p === '/mcp') {
+        if (req.method !== 'POST') return send(res, 405, { error: 'Use POST' }, { Allow: 'POST' });
+        const msg = await readBody(req);
+        const out = appRpc(msg);
+        if (!out) { res.writeHead(202); return res.end(); }
+        return send(res, 200, out);
+      }
+      return send(res, 503, containerReadiness());
+    }
+
     // Identity: Caddy sets X-Private-Peer from the real Tailscale connection; client copies are stripped.
     let who = 'dev';
     if (req.method === 'GET' && p === '/api/ping') return send(res, 200, { ok: true }); // reachability only; reveals nothing
@@ -147,4 +164,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 server.requestTimeout = 0; // actions such as a rollback can take minutes
-server.listen(PORT, process.env.HOST || '127.0.0.1', () => console.log(`Wizard Troubleshooter on 127.0.0.1:${PORT}${PREFIX}/`));
+server.listen(PORT, process.env.HOST || (ISOLATED_APP ? '0.0.0.0' : '127.0.0.1'), () => console.log(`Wizard Troubleshooter on port ${PORT}${PREFIX}/ (${ISOLATED_APP ? 'isolated app; host recovery pending' : 'native host'})`));
