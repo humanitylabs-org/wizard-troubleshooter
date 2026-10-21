@@ -9,76 +9,82 @@
 :root {
   --bg: var(--wz-bg, #0b0d12); --surface: var(--wz-surface, #151922); --surface2: var(--wz-surface-2, #1c2130);
   --text: var(--wz-text, #e8eaf0); --muted: var(--wz-text-muted, #9aa3b5); --line: var(--wz-border, #262c3a);
-  --accent: var(--wz-accent, #8ab4ff); --ok: #4cc38a; --warn: #e5b454; --bad: #ef6b6b;
+  --accent: var(--wz-accent, #e8eaf0); --ok: #4cc38a; --warn: #e5b454; --bad: #ef6b6b;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 body { display: flex; flex-direction: column; height: 100dvh; }
-body.hosted { background: transparent; }
-/* Inside a Wizard window the window's own title bar and Back handle navigation; a page link back to the shell would load the shell inside this frame. */
+body.hosted, html:has(> body.hosted) { background: transparent; }
+/* Inside a Wizard window the window's own title bar and Back handle navigation. */
 body.hosted a.back { display: none; }
-html:has(> body.hosted) { background: transparent; }
-body.hosted header { padding-top: 10px; }
-header { flex: none; display: flex; align-items: center; gap: 10px; padding: max(10px, env(safe-area-inset-top)) 14px 10px; border-bottom: 1px solid var(--line); }
-header h1 { font-size: 17px; margin: 0; flex: 1; }
-a.back { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 22px; padding: 0 6px 2px 2px; }
-.pill { display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; cursor: pointer; max-width: 55vw; }
+button { font: inherit; color: inherit; }
+header { flex: none; display: flex; align-items: center; gap: 6px; padding: max(8px, env(safe-area-inset-top)) 12px 8px; }
+header h1 { font-size: 16px; font-weight: 600; margin: 0; flex: 1; }
+a.back { color: var(--text); text-decoration: none; font-size: 24px; line-height: 1; padding: 4px 8px 6px 2px; }
+.pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); background: none; border: 0; padding: 8px 4px 8px 8px; cursor: pointer; max-width: 60vw; }
 .pill span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
 .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
 #scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-.wrap { max-width: 720px; margin: 0 auto; padding: 16px 14px; }
-.welcome { text-align: center; padding: 7vh 6px 18px; }
-.welcome[hidden] { display: none; }
-.welcome .big { font-size: 22px; font-weight: 650; margin-bottom: 6px; }
+.wrap { max-width: 680px; margin: 0 auto; padding: 8px 16px 16px; min-height: 100%; display: flex; flex-direction: column; }
+.welcome { margin-top: auto; padding: 0 0 8px; }
+.welcome .big { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
 .welcome .sub { color: var(--muted); font-size: 15px; }
-.welcome .alert { margin: 16px auto 0; max-width: 460px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; font-size: 14px; text-align: left; display: flex; gap: 10px; }
-.welcome .alert[hidden] { display: none; }
-.welcome .alert .dot { margin-top: 6px; }
-.chips { display: flex; flex-direction: column; gap: 8px; max-width: 460px; margin: 18px auto 0; }
-.chip { font: inherit; text-align: left; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; cursor: pointer; }
-.chip.main { background: var(--accent); color: #0b0d12; border-color: transparent; font-weight: 650; text-align: center; padding: 15px; }
-.log { display: flex; flex-direction: column; gap: 10px; }
-.msg { padding: 10px 13px; border-radius: 16px; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 88%; }
-.msg.owner { align-self: flex-end; background: var(--accent); color: #0b0d12; border-bottom-right-radius: 5px; }
-.msg.agent { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
-.msg.agent code { background: var(--surface2); padding: 1px 5px; border-radius: 5px; font-size: 14px; }
-.msg .who { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
-.signin { align-self: stretch; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid #e0a84a; border-radius: 12px; padding: 10px 12px; font-size: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.signin span { flex: 1 1 220px; }
-.signin a { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); color: var(--text); text-decoration: none; background: var(--surface2); white-space: nowrap; }
-.eng { display: grid; gap: 6px; }
-.eng .row { gap: 10px; }
-.eng .open { font-size: 13px; color: var(--text); text-decoration: underline; white-space: nowrap; }
-.note { align-self: center; font-size: 13px; color: var(--muted); text-align: center; max-width: 92%; }
-.working { align-self: flex-start; font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; max-width: 92%; }
+.welcome .alert { margin-top: 14px; font-size: 14px; display: flex; gap: 10px; color: var(--text); }
+.welcome .alert span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.welcome .alert .dot { margin-top: 7px; }
+.chips { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; }
+.chip { text-align: left; background: var(--surface); border: 0; border-radius: 12px; padding: 12px 14px; cursor: pointer; }
+.chip.main { background: var(--text); color: var(--bg); font-weight: 600; }
+.log { display: flex; flex-direction: column; gap: 14px; }
+.log:empty { display: none; }
+.msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.owner { align-self: flex-end; max-width: 85%; background: var(--surface2); padding: 9px 13px; border-radius: 16px 16px 4px 16px; }
+.msg.agent { align-self: stretch; }
+.msg.agent code { background: var(--surface); padding: 1px 5px; border-radius: 5px; font-size: 14px; }
+.msg .who { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.signin, .note { font-size: 14px; color: var(--muted); }
+.signin { display: flex; flex-direction: column; gap: 8px; color: var(--text); }
+.signin .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.act { min-height: 40px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 10px; border: 0; background: var(--surface2); color: var(--text); text-decoration: none; cursor: pointer; font-size: 14px; }
+.working { font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
 .working .step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.spin { width: 14px; height: 14px; flex: none; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: s .9s linear infinite; }
+.spin { width: 13px; height: 13px; flex: none; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: s .9s linear infinite; }
 @keyframes s { to { transform: rotate(360deg); } }
-.after { display: flex; gap: 8px; flex-wrap: wrap; }
+.after { display: flex; gap: 6px; flex-wrap: wrap; }
 .after .chip { padding: 8px 12px; font-size: 14px; }
-footer { flex: none; border-top: 1px solid var(--line); padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
-.composer { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
-textarea { flex: 1; min-height: 44px; max-height: 160px; resize: none; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 10px 15px; }
-button.send { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--accent); color: #0b0d12; font-size: 20px; font-weight: 700; cursor: pointer; }
-button.send.stop { background: var(--surface2); color: var(--text); border: 1px solid var(--line); font-size: 15px; }
+footer { flex: none; padding: 4px 16px max(12px, env(safe-area-inset-bottom)); }
+.dock { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+/* Model picker: one tap, right above the message box. */
+.picker { display: flex; gap: 2px; padding: 3px; background: var(--surface); border-radius: 12px; }
+.seg { flex: 1 1 0; min-width: 0; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 4px 4px; border: 0; border-radius: 9px; background: none; color: var(--muted); cursor: pointer; line-height: 1.2; }
+.seg b { font-size: 14px; font-weight: 600; }
+.seg small { font-size: 11px; opacity: .8; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seg[aria-checked="true"] { background: var(--surface2); color: var(--text); }
+.seg.off { opacity: .6; }
+.seg.off b { font-weight: 500; }
+.seg.off[aria-checked="true"] { opacity: .75; }
+.composer { display: flex; gap: 8px; align-items: flex-end; }
+textarea { flex: 1; min-height: 44px; max-height: 160px; resize: none; font: inherit; color: var(--text); background: var(--surface); border: 0; border-radius: 22px; padding: 10px 16px; outline: none; }
+textarea:focus { box-shadow: 0 0 0 1px var(--line); }
+button.send { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--text); color: var(--bg); font-size: 19px; font-weight: 700; cursor: pointer; }
+button.send.stop { background: var(--surface2); color: var(--text); font-size: 14px; }
 button:disabled { opacity: .5; cursor: default; }
-/* Details sheet: everything technical lives here, out of the way. */
+/* Details sheet: technical things, out of the way. Flat sections, no boxes. */
 .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 10; }
 .sheet.open { display: block; }
-.sheet .panel { position: absolute; left: 0; right: 0; bottom: 0; max-height: 85dvh; overflow-y: auto; background: var(--bg); border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; padding: 14px 14px max(18px, env(safe-area-inset-bottom)); max-width: 720px; margin: 0 auto; }
-.sheet h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 16px 2px 8px; }
-.sheet .top { display: flex; align-items: center; } .sheet .top b { flex: 1; font-size: 17px; }
-.list { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-.row { display: flex; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); align-items: flex-start; font-size: 14px; }
-.row:first-child { border-top: 0; } .row .dot { margin-top: 6px; } .row .m { flex: 1; min-width: 0; }
+.sheet .panel { position: absolute; left: 0; right: 0; bottom: 0; max-height: 82dvh; overflow-y: auto; background: var(--bg); border-radius: 16px 16px 0 0; padding: 6px 16px 0; max-width: 680px; margin: 0 auto; }
+.sheet h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 18px 0 2px; }
+.row { display: flex; gap: 10px; padding: 7px 0; align-items: flex-start; font-size: 14px; }
+.row .dot { margin-top: 7px; } .row .m { flex: 1; min-width: 0; }
 .row .d { color: var(--muted); overflow-wrap: anywhere; }
-.btn { font: inherit; font-size: 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface2); color: var(--text); padding: 8px 11px; cursor: pointer; }
-.fixes { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
-.past { display: block; width: 100%; text-align: left; font: inherit; font-size: 14px; color: var(--text); background: transparent; border: 0; border-top: 1px solid var(--line); padding: 10px 12px; cursor: pointer; }
-.past:first-child { border-top: 0; }
+.row a { color: var(--text); font-size: 13px; white-space: nowrap; padding-top: 1px; }
+.fixes { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
+.past { display: block; width: 100%; text-align: left; font-size: 14px; background: none; border: 0; padding: 7px 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .small { font-size: 12px; color: var(--muted); }
+.sheet .bottom { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--bg) 14px); padding: 22px 0 max(12px, env(safe-area-inset-bottom)); margin-top: 6px; }
+.sheet .bottom .act { width: 100%; justify-content: center; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -92,39 +98,36 @@ button:disabled { opacity: .5; cursor: default; }
 <div id="scroll"><div class="wrap">
   <section class="welcome" id="welcome">
     <div class="big">What's wrong?</div>
-    <div class="sub">Tell me and I'll fix it. I work even when Wizard's normal chat doesn't.</div>
+    <div class="sub">Tell me and I'll fix it, even when Wizard's normal chat is down.</div>
     <div class="alert" id="alert" hidden><span class="dot bad"></span><span id="alertText"></span></div>
     <div class="chips" id="chips">
-      <button class="chip main" type="button" data-say="My Wizard is down, please fix it.">My Wizard is down, please fix it</button>
-      <button class="chip" type="button" data-say="My messages won't send in Wizard. Please fix it.">My messages won't send</button>
+      <button class="chip main" type="button" data-say="My Wizard is down, please fix it.">My Wizard is down</button>
+      <button class="chip" type="button" data-say="My messages won't send in Wizard. Please fix it.">Messages won't send</button>
       <button class="chip" type="button" data-say="My agent isn't replying in Wizard. Please fix it.">My agent isn't replying</button>
-      <button class="chip" type="button" data-say="Wizard is really slow. Please find out why and fix it.">Wizard is really slow</button>
+      <button class="chip" type="button" data-say="Wizard is really slow. Please find out why and fix it.">Wizard is slow</button>
     </div>
   </section>
   <div class="log" id="log"></div>
 </div></div>
 
-<footer>
+<footer><div class="dock">
+  <div class="picker" id="picker" role="radiogroup" aria-label="Who answers"></div>
   <div class="composer">
     <textarea id="input" rows="1" placeholder="Describe the problem…" aria-label="Message"></textarea>
     <button class="send" id="send" type="button" aria-label="Send">↑</button>
   </div>
-</footer>
+</div></footer>
 
 <div class="sheet" id="sheet"><div class="panel">
-  <div class="top"><b>System details</b><button class="btn" id="closeSheet" type="button">Done</button></div>
   <h2>Connection to your agent</h2>
-  <div class="list" id="checks"></div>
+  <div id="checks"></div>
+  <h2>Sign-ins</h2>
+  <div id="acct"></div>
   <h2>Manual fixes</h2>
-  <div class="list"><div class="fixes" id="fixes"></div></div>
-  <div id="pastWrap" hidden><h2>Earlier repair chats</h2><div class="list" id="past"></div></div>
-  <h2>What happened recently</h2>
-  <div class="list" id="incidents"><div class="row"><div class="m d">Nothing yet.</div></div></div>
-  <h2>Who answers</h2>
-  <div class="list"><div class="row"><div class="m"><select id="engine" class="btn" aria-label="Who answers">
-    <option value="auto">Claude, then ChatGPT, then Tinfoil</option><option value="claude">Claude only</option><option value="chatgpt">ChatGPT only</option><option value="tinfoil">Tinfoil only (private)</option>
-  </select><div class="d" style="margin-top:6px">Each one uses the sign-in held by its Wizard connection app. None of them goes through your agent or the Agent Service.</div></div></div>
-  <div class="eng" id="acct"></div></div>
+  <div class="fixes" id="fixes"></div>
+  <div id="pastWrap" hidden><h2>Earlier repair chats</h2><div id="past"></div></div>
+  <div id="incWrap" hidden><h2>Recently</h2><div id="incidents"></div></div>
+  <div class="bottom"><button class="act" id="closeSheet" type="button">Done</button></div>
 </div></div>
 
 <script>
@@ -133,11 +136,32 @@ button:disabled { opacity: .5; cursor: default; }
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const md = s => esc(s).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
   const H = { 'Content-Type': 'application/json', 'X-Wizard-Troubleshoot': '1' };
-  const ENGINE_KEY = 'wizard-troubleshoot-engine';
   const NAMES = { claude: 'Claude', chatgpt: 'ChatGPT', tinfoil: 'Tinfoil' };
+  const CACHE = 'wizard-troubleshoot-engines'; // last known picker, painted instantly; the server holds the real choice
   if (window.self !== window.top) document.body.classList.add('hosted');
-  $('engine').value = localStorage.getItem(ENGINE_KEY) || 'auto';
-  $('engine').addEventListener('change', () => localStorage.setItem(ENGINE_KEY, $('engine').value));
+
+  // Model picker: every provider, its real model in quieter text, the owner's choice saved on the server.
+  let engines = [], selected = null;
+  function paintPicker() {
+    $('picker').hidden = !engines.length;
+    $('picker').innerHTML = engines.map(a => `<button class="seg${a.ok ? '' : ' off'}" type="button" role="radio" data-engine="${esc(a.engine)}" aria-checked="${a.engine === selected}"${a.ok ? '' : ' aria-disabled="true"'} title="${esc(a.ok ? a.name + (a.modelLabel ? ' · ' + a.modelLabel : '') : a.reason)}"><b>${esc(a.name)}</b><small>${esc(a.ok ? (a.modelLabel || 'Ready') : a.reason)}</small></button>`).join('');
+  }
+  function setEngines(list, sel) {
+    engines = list || []; selected = sel || selected || engines.find(a => a.ok)?.engine || 'claude';
+    try { localStorage.setItem(CACHE, JSON.stringify({ engines, selected })); } catch {}
+    paintPicker();
+  }
+  try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); if (c?.engines) { engines = c.engines; selected = c.selected; paintPicker(); } } catch {}
+  async function pick(engine) {
+    if (!NAMES[engine] || engine === selected) return;
+    selected = engine; paintPicker();
+    try { await api('engine', { method: 'POST', headers: H, body: JSON.stringify({ engine }) }); setEngines(engines, engine); } catch {}
+  }
+  $('picker').addEventListener('click', e => {
+    const b = e.target.closest('[data-engine]'); if (!b || b.getAttribute('aria-disabled') === 'true') return;
+    pick(b.dataset.engine);
+  });
+  async function loadEngines() { try { const r = await api('engines'); setEngines(r.engines, r.selected); } catch {} }
 
   // Back: one step at a time. Details sheet → chat → Wizard.
   const sheetOpen = () => $('sheet').classList.contains('open');
@@ -169,9 +193,12 @@ button:disabled { opacity: .5; cursor: default; }
     $('pillText').textContent = s.overall === 'ok' ? 'All working' : bad.length === 1 ? bad[0].label + ': problem' : bad.length + ' problems';
     $('alert').hidden = s.overall === 'ok';
     if (bad.length) $('alertText').textContent = `I can already see a problem with ${bad[0].label.replace(/^Your /, 'your ')}: ${bad[0].detail.replace(/\.$/, '').toLowerCase()}. Tap below and I'll fix it.`;
-    $('checks').innerHTML = s.checks.map(c => `<div class="row"><span class="dot ${c.ok ? (c.slow ? 'warn' : 'ok') : 'bad'}"></span><div class="m"><div>${esc(c.label)}</div><div class="d">${esc(c.detail)}</div></div></div>`).join('');
-    $('fixes').innerHTML = Object.entries(actions).map(([k, a]) => `<button class="btn" type="button" data-act="${esc(k)}">${esc(a.label)}</button>`).join('');
-    if (s.accounts) $('acct').innerHTML = s.accounts.map(a => `<div class="row" data-engine="${esc(a.engine)}"><span class="dot ${a.ok ? 'ok' : 'bad'}"></span><div class="m"><div>${esc(a.name)} · ${esc(a.app)}</div><div class="d">${esc(a.detail)}</div></div>${a.ok ? '' : `<a class="open" href="${esc(a.open)}" data-openapp="${esc(a.appId)}">Open ${esc(a.app)}</a>`}</div>`).join('');
+    $('checks').innerHTML = s.checks.map(c => `<div class="row"><span class="dot ${c.ok ? (c.slow ? 'warn' : 'ok') : 'bad'}"></span><div class="m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="d">${esc(c.detail)}</div>`}</div></div>`).join('');
+    $('fixes').innerHTML = Object.entries(actions).map(([k, a]) => `<button class="act" type="button" data-act="${esc(k)}">${esc(a.label)}</button>`).join('');
+    if (s.accounts) {
+      setEngines(s.accounts, s.engine);
+      $('acct').innerHTML = s.accounts.map(a => `<div class="row"><span class="dot ${a.ok ? 'ok' : 'bad'}"></span><div class="m">${esc(a.app)}<div class="d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok ? '' : `<a href="${esc(a.open)}" data-openapp="${esc(a.appId)}">Sign in</a>`}</div>`).join('');
+    }
     if (s.repair && !current) openConv(s.repair.convId);
   }
   async function refresh(fresh, accounts) {
@@ -181,7 +208,10 @@ button:disabled { opacity: .5; cursor: default; }
   async function loadIncidents() {
     try {
       const { incidents } = await api('incidents');
-      const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result', 'repair-started'].includes(i.kind) && (i.text || i.detail)).slice(0, 12);
+      const seen = new Set();
+      const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result'].includes(i.kind) && (i.text || i.detail))
+        .filter(i => { const k = (i.text || i.detail) + when(i.at); return !seen.has(k) && seen.add(k); }).slice(0, 8);
+      $('incWrap').hidden = !shown.length;
       if (shown.length) $('incidents').innerHTML = shown.map(i => `<div class="row"><span class="dot ${i.ok === false || i.kind === 'outage' ? 'bad' : 'ok'}"></span><div class="m"><div class="d">${esc(i.text || i.detail)}</div><div class="small">${esc(when(i.at))}</div></div></div>`).join('');
     } catch {}
   }
@@ -208,7 +238,8 @@ button:disabled { opacity: .5; cursor: default; }
     $('welcome').hidden = true;
     if (ev.type === 'signin') {
       const d = document.createElement('div'); d.className = 'signin';
-      d.innerHTML = `<span>${esc(ev.text)}</span>${ev.open ? `<a href="${esc(ev.open)}" data-openapp="${esc(ev.appId || '')}">Open ${esc(ev.app)}</a>` : ''}`;
+      const offer = ev.offer && NAMES[ev.offer] ? `<button class="act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button>` : '';
+      d.innerHTML = `<span>${esc(ev.text)}</span><div class="acts">${ev.open ? `<a class="act" href="${esc(ev.open)}" data-openapp="${esc(ev.appId || '')}">Open ${esc(ev.app)}</a>` : ''}${offer}</div>`;
       log.insertBefore(d, log.querySelector('.working')); return toBottom();
     }
     if (ev.type === 'tool' || ev.type === 'status') {
@@ -216,8 +247,11 @@ button:disabled { opacity: .5; cursor: default; }
       return toBottom();
     }
     const d = document.createElement('div');
-    if (ev.type === 'text') { d.className = 'msg ' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="who">${esc(NAMES[ev.engine] || 'Claude')} · via the ${esc(NAMES[ev.engine] || 'Claude')} app</div>${md(ev.text)}` : esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
-    else if (ev.type === 'note') { d.className = 'note'; d.textContent = ev.text; }
+    if (ev.type === 'text') { d.className = 'msg ' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="who">${esc(NAMES[ev.engine] || 'Claude')}${ev.modelLabel ? ' · ' + esc(ev.modelLabel) : ''}</div>${md(ev.text)}` : esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
+    else if (ev.type === 'note') {
+      d.className = 'note'; d.textContent = ev.text;
+      if (ev.offer && NAMES[ev.offer]) { d.className = 'signin'; d.innerHTML = `<span>${esc(ev.text)}</span><div class="acts"><button class="act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button></div>`; }
+    }
     else return;
     log.insertBefore(d, log.querySelector('.working')); toBottom();
   }
@@ -254,7 +288,7 @@ button:disabled { opacity: .5; cursor: default; }
     paintEvent({ type: 'text', role: 'owner', text: message }); setRunning(true);
     $('input').value = ''; autosize();
     try {
-      const r = await api('repair', { method: 'POST', headers: H, body: JSON.stringify({ id: current, message: message + ctx, engine: $('engine').value }) });
+      const r = await api('repair', { method: 'POST', headers: H, body: JSON.stringify({ id: current, message: message + ctx, engine: selected || 'auto' }) });
       if (r.id !== current) { current = r.id; seq = 0; history.replaceState(history.state, '', '#r=' + r.id); }
       seq += 1; // the server's copy of our message; already painted
       poll();
@@ -265,6 +299,11 @@ button:disabled { opacity: .5; cursor: default; }
     const o = e.target.closest('[data-openapp]');
     if (o) { try { if (window.parent !== window && window.parent.WizOpenApp?.(o.dataset.openapp)) { e.preventDefault(); return; } } catch (_) {} return; }
     const c = e.target.closest('[data-say]'); if (c) return say(c.dataset.say);
+    const rt = e.target.closest('[data-retry]');
+    if (rt) { // the picked engine couldn't answer: switch to the offered one and ask the same question again
+      const last = [...log.querySelectorAll('.msg.owner')].at(-1)?.textContent || '';
+      rt.disabled = true; pick(rt.dataset.retry).then(() => say(last)); return;
+    }
     if (e.target.closest('[data-new]')) newChat();
   });
   $('send').addEventListener('click', () => running ? api('repair/stop', { method: 'POST', headers: H, body: '{}' }).catch(() => {}) : say($('input').value));
@@ -285,6 +324,7 @@ button:disabled { opacity: .5; cursor: default; }
   const m = location.hash.match(/r=([a-f0-9]{16})/);
   if (m) openConv(m[1]);
   refresh(false, false);
+  loadEngines();
   setInterval(() => { if (!document.hidden) refresh(false); }, 20000);
 })();
 </script>

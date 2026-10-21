@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease } from './lib/checks.mjs';
 import { startRepair, loadConv, listConvs, busy, stopRepair } from './lib/repair.mjs';
-import { allSignins, engineOrder, ENGINES } from './lib/providers.mjs';
+import { allSignins, engineOrder, ENGINES, selectedEngine, saveEngine } from './lib/providers.mjs';
 
 function guardianToken() {
   const f = path.join(CONFIG.stateDir, 'guardian.token');
@@ -133,7 +133,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/ping') return send(res, 200, { ok: true });
     if (req.method === 'GET' && p === '/api/status') {
       const s = await status(url.searchParams.get('fresh') === '1');
-      const extra = url.searchParams.get('accounts') === '1' ? { accounts: await allSignins(), order: engineOrder('auto') } : {};
+      let extra = {};
+      if (url.searchParams.get('accounts') === '1') { const accounts = await allSignins(); extra = { accounts, order: engineOrder('auto'), engine: selectedEngine(accounts) }; }
       return send(res, 200, { ...s, ...extra, release: await lastAgentRelease(), repair: busy() || null, actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '' }])) });
     }
     if (req.method === 'GET' && p === '/api/incidents') return send(res, 200, { incidents: readIncidents(40) });
@@ -146,7 +147,8 @@ const server = http.createServer(async (req, res) => {
       statusCache = null;
       return send(res, r.ok ? 200 : 500, { ...r, status: await status(true) });
     }
-    if (req.method === 'GET' && p === '/api/engines') return send(res, 200, { engines: await allSignins(), order: engineOrder('auto') });
+    if (req.method === 'GET' && p === '/api/engines') { const engines = await allSignins(); return send(res, 200, { engines, order: engineOrder('auto'), selected: selectedEngine(engines) }); }
+    if (req.method === 'POST' && p === '/api/engine') { const b = await readBody(req); return send(res, 200, { selected: saveEngine(b.engine) }); }
     if (req.method === 'GET' && p === '/api/repairs') return send(res, 200, { repairs: listConvs(), running: busy() || null });
     if (req.method === 'POST' && p === '/api/repair') {
       const b = await readBody(req);
