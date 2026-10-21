@@ -140,6 +140,12 @@ button:disabled { opacity: .5; cursor: default; }
   const md = s => esc(s).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
   const H = { 'Content-Type': 'application/json', 'X-Wizard-Troubleshoot': '1' };
   const NAMES = { claude: 'Claude', chatgpt: 'ChatGPT', tinfoil: 'Tinfoil' };
+  // A connection app's page: same origin (/wizard-claude/), its own HTTPS port, or its App Store page when missing.
+  // Another origin opens in a new tab: the shell can't host it in its own window.
+  const appLink = (a, label, cls) => {
+    let other = false; try { other = new URL(a.open, location.href).origin !== location.origin; } catch (_) {}
+    return `<a${cls ? ` class="${cls}"` : ''} href="${esc(a.open)}" data-openapp="${esc(a.installed === false ? '' : a.appId || '')}"${other ? ' target="_blank" rel="noopener"' : ''}>${esc(label)}</a>`;
+  };
   const CACHE = 'wizard-troubleshoot-engines'; // last known picker, painted instantly; the server holds the real choice
   if (window.self !== window.top) document.body.classList.add('hosted');
 
@@ -200,7 +206,7 @@ button:disabled { opacity: .5; cursor: default; }
     $('fixes').innerHTML = Object.entries(actions).map(([k, a]) => `<button class="act" type="button" data-act="${esc(k)}">${esc(a.label)}</button>`).join('');
     if (s.accounts) {
       setEngines(s.accounts, s.engine);
-      $('acct').innerHTML = s.accounts.map(a => `<div class="row"><span class="dot ${a.ok ? 'ok' : 'bad'}"></span><div class="m">${esc(a.app)}<div class="d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok ? '' : `<a href="${esc(a.open)}" data-openapp="${esc(a.appId)}">Sign in</a>`}</div>`).join('');
+      $('acct').innerHTML = s.accounts.map(a => `<div class="row"><span class="dot ${a.ok ? 'ok' : 'bad'}"></span><div class="m">${esc(a.app)}<div class="d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok || !a.open ? '' : appLink(a, a.installed === false ? 'Get app' : 'Sign in', '')}</div>`).join('');
     }
     if (s.repair && !current) openConv(s.repair.convId);
   }
@@ -242,7 +248,7 @@ button:disabled { opacity: .5; cursor: default; }
     if (ev.type === 'signin') {
       const d = document.createElement('div'); d.className = 'signin';
       const offer = ev.offer && NAMES[ev.offer] ? `<button class="act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button>` : '';
-      d.innerHTML = `<span>${esc(ev.text)}</span><div class="acts">${ev.open ? `<a class="act" href="${esc(ev.open)}" data-openapp="${esc(ev.appId || '')}">Open ${esc(ev.app)}</a>` : ''}${offer}</div>`;
+      d.innerHTML = `<span>${esc(ev.text)}</span><div class="acts">${ev.open ? appLink(ev, ev.installed === false ? `Get the ${ev.app}` : `Open ${ev.app}`, 'act') : ''}${offer}</div>`;
       log.insertBefore(d, log.querySelector('.working')); return toBottom();
     }
     if (ev.type === 'tool' || ev.type === 'status') {
@@ -300,7 +306,7 @@ button:disabled { opacity: .5; cursor: default; }
   document.addEventListener('click', e => {
     // Inside the Wizard shell, open the connection app in its own window; on the bare page follow the link.
     const o = e.target.closest('[data-openapp]');
-    if (o) { try { if (window.parent !== window && window.parent.WizOpenApp?.(o.dataset.openapp)) { e.preventDefault(); return; } } catch (_) {} return; }
+    if (o) { try { if (o.dataset.openapp && window.parent !== window && window.parent.WizOpenApp?.(o.dataset.openapp)) { e.preventDefault(); return; } } catch (_) {} return; }
     const c = e.target.closest('[data-say]'); if (c) return say(c.dataset.say);
     const rt = e.target.closest('[data-retry]');
     if (rt) { // the picked engine couldn't answer: switch to the offered one and ask the same question again
