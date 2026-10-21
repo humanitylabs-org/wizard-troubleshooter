@@ -31,7 +31,7 @@ function hostEnv(state, extra = {}) {
     CLAUDE_CONFIG_DIR: path.join(state, 'claude-empty'), CLAUDE_BIN: '/bin/false',
     CHATGPT_AUTH_FILE: path.join(state, 'no-auth.json'), CHATGPT_BASE_URL: 'http://127.0.0.1:9',
     TINFOIL_URL: 'http://127.0.0.1:9', TINFOIL_TOKEN_FILE: path.join(state, 'no-token.json'),
-    DOCKER_BIN: '/bin/false', HOME: process.env.HOME, ...extra,
+    DOCKER_BIN: '/bin/false', HOME: process.env.HOME, WIZARD_APPS_FILE: path.join(state, 'no-apps.json'), ...extra,
   };
 }
 async function startServer(env) {
@@ -330,4 +330,46 @@ test('picker: the selected provider\'s sign-in expired -> plain message, Open ap
     assert.equal(chatgptCalls, 0);
     assert.equal((await engines(port)).selected, 'chatgpt', 'the saved choice is unchanged');
   } finally { child.kill(); fake.s.close(); }
+});
+
+// --- Where "Sign in" / "Open … app" goes ------------------------------------------------------------------------
+test('connection app links follow App Manager\'s registry: own HTTPS port, same-origin path, or the Store when missing', async () => {
+  const state = tmp();
+  // The demo-box layout: Claude and ChatGPT on their own Serve ports (not mirrored on the shell origin), no Tinfoil.
+  fs.writeFileSync(path.join(state, 'apps.json'), JSON.stringify({ apps: [
+    { id: 'wizard-claude', view: { url: 'https://box.example.ts.net:8799/', local: 'http://127.0.0.1:8799/' } },
+    { id: 'wizard-chatgpt', view: { url: '/wizard-chatgpt/', local: 'http://127.0.0.1:8801/' } },
+    { id: 'files', view: { url: '/files/' } },
+  ] }));
+  const claude = fakeClaude(state);
+  fs.rmSync(path.join(claude.CLAUDE_CONFIG_DIR, '.credentials.json'));
+  const { port, child } = await startServer(hostEnv(state, { ...claude, WIZARD_APPS_FILE: path.join(state, 'apps.json') }));
+  try {
+    const by = Object.fromEntries((await engines(port)).engines.map(a => [a.engine, a]));
+    assert.equal(by.claude.open, 'https://box.example.ts.net:8799/', 'the app\'s real address, not a /wizard-claude/ path this box does not serve');
+    assert.equal(by.claude.installed, true);
+    assert.equal(by.chatgpt.open, '/wizard-chatgpt/');
+    assert.equal(by.tinfoil.open, '/wizard-os-home/store/index.html?app=wizard-tinfoil', 'a missing app opens its App Store page');
+    assert.equal(by.tinfoil.installed, false);
+    const c = await chat(port, 'help', 'claude');
+    const ev = c.events.find(e => e.type === 'signin');
+    assert.equal(ev.open, 'https://box.example.ts.net:8799/', 'the chat\'s Open Claude app button uses the same address');
+    const t = await chat(port, 'help', 'tinfoil');
+    const tev = t.events.find(e => e.type === 'signin');
+    assert.equal(tev.installed, false); assert.match(tev.text, /isn't installed.*App Store/);
+  } finally { child.kill(); }
+});
+
+test('Claude Code missing on the server: no app button (signing in there cannot fix it), plain next step', async () => {
+  const state = tmp();
+  fs.writeFileSync(path.join(state, 'apps.json'), JSON.stringify({ apps: [{ id: 'wizard-claude', view: { url: '/wizard-claude/' } }] }));
+  const { port, child } = await startServer(hostEnv(state, { CLAUDE_BIN: path.join(state, 'no-claude'), WIZARD_APPS_FILE: path.join(state, 'apps.json') }));
+  try {
+    const cl = (await engines(port)).engines.find(a => a.engine === 'claude');
+    assert.equal(cl.ok, false); assert.equal(cl.reason, 'Not available'); assert.equal(cl.open, '');
+    assert.match(cl.detail, /Claude Code installed/); assert.match(cl.detail, /Pick ChatGPT or Tinfoil/);
+    const c = await chat(port, 'help', 'claude');
+    const ev = c.events.find(e => e.type === 'signin');
+    assert.equal(ev.open, '', 'no Open Claude app button');
+  } finally { child.kill(); }
 });
