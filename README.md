@@ -6,15 +6,19 @@ private network and the HTTPS front door; the sign-in bridge, Wizard shell, Agen
 all be down and it still works.
 
 - **Chat first**: the page is a chat with quick-tap messages. Status is one pill in the header; tapping
-  it opens the details sheet (checks, manual fixes, earlier repair chats, recent incidents, engine choice).
+  it opens the details sheet (checks, sign-ins, manual fixes, earlier repair chats, recent incidents).
 - **Status**: plain-language checks of every link (Tailscale, HTTPS front door + certificate, sign-in check,
   app screens, Agent Service, Hermes, disk, memory). `node bin/status.mjs --accounts`.
 - **One-tap fixes**: a fixed list of restarts plus "Undo last Agent Service update". No free-form commands.
 - **Repair chat**: the owner talks straight to a model provider using the sign-in held by the box's Wizard
-  connection apps. No Hermes and no Agent Service in the path. Order: Claude, then ChatGPT, then Tinfoil. The owner can
-  pick one under **Who answers** in the details sheet. Each answer is labelled with the app whose sign-in was used. A
-  missing or expired sign-in shows a plain message and an **Open Claude/ChatGPT/Tinfoil app** button, then the chat
-  falls back to the next engine. Runs survive the browser disconnecting. Briefed by `REPAIR_PROMPT.md`, with this
+  connection apps. No Hermes and no Agent Service in the path. A **model picker** sits right above the message box:
+  one segment per provider with the model it actually uses in quieter text (Claude · Opus 5.5 read from Claude Code's
+  own init event, ChatGPT · `CHATGPT_MODEL`, Tinfoil · the chat model the app offers). Default is the first provider
+  that is signed in (Claude first). The choice is saved on the server (`prefs.json` in the state dir, `POST
+  /api/engine`), so every device shows the same one. Providers that can't answer are shown disabled with a short
+  reason. Each answer is labelled with provider and model. If the picked provider's sign-in is missing or expired,
+  the chat says so plainly with an **Open … app** button and offers **Ask <next> instead**; it never switches on its
+  own. The Guardian's automatic repairs still use the order Claude, then ChatGPT, then Tinfoil. Runs survive the browser disconnecting. Briefed by `REPAIR_PROMPT.md`, with this
   box's wiring filled in from configuration.
   - **Claude** (Claude app): Claude Code runs on the server with full access, using the login directory the Claude
     app's engine mounts (`~/.claude`, or `CLAUDE_CONFIG_DIR`). Used in place. Claude Code renews it itself.

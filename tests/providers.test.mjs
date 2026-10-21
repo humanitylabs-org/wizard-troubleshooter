@@ -123,7 +123,8 @@ test('fallback: Claude has no sign-in, ChatGPT answers with the ChatGPT app sign
   try {
     const c = await chat(port, 'check the box status', 'auto');
     assert.equal(c.events.find(e => e.type === 'signin').engine, 'claude');
-    assert.match(c.events.find(e => e.type === 'status').text, /ChatGPT is looking into it \(signed in through the ChatGPT app\)/);
+    assert.match(c.events.find(e => e.type === 'status').text, /ChatGPT is looking into it/);
+    assert.equal(c.events.find(e => e.type === 'status').via, 'ChatGPT app');
     const answer = c.events.find(e => e.type === 'text' && e.role === 'agent');
     assert.equal(answer.engine, 'chatgpt');
     assert.match(answer.text, /Hermes is not running/);
@@ -242,5 +243,91 @@ test('tool loop: a provider error after the model already answered keeps the ans
     assert.equal(n, 3, 'retried once with shortened tool output');
     assert.ok(c.events.some(e => e.type === 'note' && /Tinfoil stopped partway/.test(e.text)));
     assert.ok(!c.events.some(e => e.type === 'note' && /No AI could answer/.test(e.text)));
+  } finally { child.kill(); fake.s.close(); }
+});
+
+// --- Model picker -------------------------------------------------------------------------------------------
+const engines = port => fetch(`http://127.0.0.1:${port}/troubleshoot/api/engines`).then(r => r.json());
+const setEngine = (port, engine) => fetch(`http://127.0.0.1:${port}/troubleshoot/api/engine`, { method: 'POST', headers: H, body: JSON.stringify({ engine }) });
+function fakeClaude(state, model = 'claude-opus-5-5') {
+  const dir = path.join(state, 'claude-home');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'x', refreshToken: 'y', expiresAt: Date.now() + 3600e3, subscriptionType: 'max' } }));
+  const bin = path.join(state, 'claude');
+  fs.writeFileSync(bin, `#!/bin/sh\necho '{"type":"system","subtype":"init","session_id":"s1","model":"${model}"}'\necho '{"type":"assistant","message":{"model":"${model}","content":[{"type":"text","text":"All good."}]}}'\necho '{"type":"result","session_id":"s1","is_error":false}'\n`, { mode: 0o755 });
+  return { CLAUDE_CONFIG_DIR: dir, CLAUDE_BIN: bin };
+}
+
+test('picker: lists every provider with its real model, default is the first ready one (Claude), unavailable ones say why', async () => {
+  const state = tmp();
+  fs.writeFileSync(path.join(state, 'auth.json'), JSON.stringify({ providers: { 'openai-codex': { tokens: { access_token: fakeJwt() } } } }));
+  const { port, child } = await startServer(hostEnv(state, { ...fakeClaude(state), CHATGPT_AUTH_FILE: path.join(state, 'auth.json') }));
+  try {
+    const e = await engines(port);
+    assert.deepEqual(e.engines.map(a => a.engine), ['claude', 'chatgpt', 'tinfoil']);
+    assert.equal(e.selected, 'claude', 'Claude is the default when signed in');
+    const by = Object.fromEntries(e.engines.map(a => [a.engine, a]));
+    assert.equal(by.claude.model, 'claude-opus-5-5', 'model read from Claude Code itself');
+    assert.equal(by.claude.modelLabel, 'Opus 5.5');
+    assert.equal(by.chatgpt.modelLabel, 'GPT-5.6 Luna');
+    assert.equal(by.tinfoil.ok, false);
+    assert.equal(by.tinfoil.reason, 'Not available', 'disabled provider carries a short reason');
+    const c = await chat(port, 'hi', e.selected);
+    const ans = c.events.find(x => x.type === 'text' && x.role === 'agent');
+    assert.equal(ans.engine, 'claude'); assert.equal(ans.modelLabel, 'Opus 5.5', 'each answer keeps its answered-by label');
+  } finally { child.kill(); }
+});
+
+test('picker: with no Claude sign-in the default is the next ready provider; a disabled one is never the default', async () => {
+  const state = tmp();
+  fs.writeFileSync(path.join(state, 'auth.json'), JSON.stringify({ providers: { 'openai-codex': { tokens: { access_token: fakeJwt() } } } }));
+  const { port, child } = await startServer(hostEnv(state, { CHATGPT_AUTH_FILE: path.join(state, 'auth.json') }));
+  try {
+    const e = await engines(port);
+    assert.equal(e.selected, 'chatgpt');
+    const claude = e.engines.find(a => a.engine === 'claude');
+    assert.equal(claude.ok, false); assert.equal(claude.reason, 'Not signed in');
+  } finally { child.kill(); }
+});
+
+test('picker: the choice is saved on the server and survives a restart; unknown engines are refused', async () => {
+  const state = tmp();
+  let s = await startServer(hostEnv(state, fakeClaude(state)));
+  try {
+    assert.equal((await engines(s.port)).selected, 'claude');
+    assert.equal((await setEngine(s.port, 'tinfoil')).status, 200);
+    assert.equal((await engines(s.port)).selected, 'tinfoil', 'kept even though Tinfoil is not ready: never switched silently');
+    assert.equal((await setEngine(s.port, 'auto')).status, 400);
+    assert.equal((await setEngine(s.port, 'gpt-evil')).status, 400);
+    const st = await (await fetch(`http://127.0.0.1:${s.port}/troubleshoot/api/status?accounts=1`)).json();
+    assert.equal(st.engine, 'tinfoil');
+  } finally { s.child.kill(); }
+  s = await startServer(hostEnv(state, fakeClaude(state)));
+  try { assert.equal((await engines(s.port)).selected, 'tinfoil', 'persists across restarts'); }
+  finally { s.child.kill(); }
+});
+
+test('picker: the selected provider\'s sign-in expired -> plain message, Open app, offer the next one, no silent switch', async () => {
+  const state = tmp();
+  fs.writeFileSync(path.join(state, 'auth.json'), JSON.stringify({ providers: { 'openai-codex': { tokens: { access_token: fakeJwt(-1) } } } }));
+  let chatgptCalls = 0;
+  const fake = await listen((req, res) => { chatgptCalls++; res.end('{}'); });
+  const claudeEnv = fakeClaude(state);
+  const { port, child } = await startServer(hostEnv(state, { ...claudeEnv, CHATGPT_AUTH_FILE: path.join(state, 'auth.json'), CHATGPT_BASE_URL: `http://127.0.0.1:${fake.port}` }));
+  try {
+    await setEngine(port, 'chatgpt');
+    const e = await engines(port);
+    assert.equal(e.selected, 'chatgpt');
+    assert.equal(e.engines.find(a => a.engine === 'chatgpt').reason, 'Sign-in expired');
+    const c = await chat(port, 'hi', 'chatgpt');
+    const s = c.events.find(x => x.type === 'signin');
+    assert.match(s.text, /ChatGPT app's sign-in has expired/);
+    assert.equal(s.open, '/wizard-chatgpt/');
+    assert.equal(s.offer, 'claude', 'offers the next ready provider');
+    assert.ok(!/Trying/.test(s.text));
+    assert.ok(!c.events.some(x => x.type === 'text' && x.role === 'agent'), 'nobody else answered on its own');
+    assert.ok(!c.events.some(x => x.type === 'note' && /No AI could answer/.test(x.text)));
+    assert.equal(chatgptCalls, 0);
+    assert.equal((await engines(port)).selected, 'chatgpt', 'the saved choice is unchanged');
   } finally { child.kill(); fake.s.close(); }
 });
