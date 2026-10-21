@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Wizard Guardian: runs every minute (wizard-guardian.timer), independent of the Agent Service and Hermes.
 // For each broken link it restarts the piece, undoes a fresh Agent Service update if a restart doesn't help,
-// and as a last resort starts a Troubleshooter repair with the owner's Claude/ChatGPT subscription.
+// and as a last resort starts a Troubleshooter repair through the box's Claude/ChatGPT/Tinfoil connection apps.
+// GUARDIAN_ACT=0 (or --dry-run) makes it report-only.
 // Every action is logged to the incident log and reported once in the owner's Wizard thread.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +17,8 @@ const HOUR = 3600e3;
 const MAX_FIXES_PER_HOUR = 3;
 const ROLLBACK_WINDOW = 2 * HOUR; // undo only an update installed this recently
 const AI_REPAIR_GAP = 2 * HOUR;
-const DRY = process.argv.includes('--dry-run');
+// GUARDIAN_ACT=0: report-only (checks, counts and logs what it would do, never restarts, rolls back or starts a repair).
+const DRY = process.argv.includes('--dry-run') || process.env.GUARDIAN_ACT === '0';
 const THREAD = process.env.GUARDIAN_THREAD || '';
 
 const load = () => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return { fails: {}, fixes: {}, outage: null, lastAiRepair: 0, rolledBack: {} }; } };
@@ -84,7 +86,7 @@ async function main() {
     if (recent.length >= 1 && freshUpdate) action = `rollback:${c.id}`;
     else if (recent.length < MAX_FIXES_PER_HOUR) action = `restart:${c.id}`;
     if (!action) continue;
-    if (DRY) { console.log('[dry-run] would', action, 'for', c.label, '-', c.detail); continue; }
+    if (DRY) { console.log('[dry-run] would', action, 'for', c.label, '-', c.detail); if (process.env.GUARDIAN_ACT === '0' && s.fails[c.id] === (def.threshold || 2)) logIncident({ kind: 'would-fix', action, text: `Report-only: ${c.label} wasn't working (${bare(c.detail)}); the guardian would ${action.startsWith('rollback') ? 'undo the last update' : 'restart it'}.` }); continue; }
     logIncident({ kind: 'auto-fix', action, text: `${c.label} wasn't working (${bare(c.detail)}). Wizard ${action.startsWith('rollback') ? 'is undoing the last update' : 'is restarting it'}.` });
     const r = await doAction(action);
     recent.push(now);

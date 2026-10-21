@@ -6,8 +6,9 @@ import net from 'node:net';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { CONFIG, runChecks, accountChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease } from './lib/checks.mjs';
+import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease } from './lib/checks.mjs';
 import { startRepair, loadConv, listConvs, busy, stopRepair } from './lib/repair.mjs';
+import { allSignins, engineOrder, ENGINES } from './lib/providers.mjs';
 
 function guardianToken() {
   const f = path.join(CONFIG.stateDir, 'guardian.token');
@@ -22,6 +23,23 @@ const PREFIX = '/troubleshoot';
 const ORIGINS = new Set(String(process.env.WIZARD_PRIVATE_ORIGINS || (process.env.WIZARD_PUBLIC_NAME ? `https://${process.env.WIZARD_PUBLIC_NAME}` : '')).split(',').map(s => s.trim()).filter(Boolean));
 const PAGE = path.join(path.dirname(new URL(import.meta.url).pathname), 'web/index.html');
 const DEV_OPEN = process.env.TROUBLESHOOT_DEV_NO_AUTH === '1'; // local tests only
+// Where the real peer address comes from. caddy: the private gateway sets X-Private-Peer from the connection.
+// tailscale-serve: Tailscale Serve proxies from loopback and overwrites X-Forwarded-For with the peer's tailnet address
+// (client copies are replaced, verified on oscarvps), so only a loopback connection carrying it is trusted.
+const FRONT = process.env.TROUBLESHOOT_FRONT || 'caddy';
+const WHOIS_SOCKET = process.env.TS_WHOIS_SOCKET || CONFIG.tailscaleSocket;
+// Optional allow-list of tailnet logins (comma separated). Empty: any human (untagged) principal on the tailnet.
+const OWNERS = new Set(String(process.env.TROUBLESHOOT_OWNERS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+function peerAddress(req) {
+  if (FRONT === 'tailscale-serve') {
+    const ra = req.socket.remoteAddress;
+    if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ra)) return null;
+    const xff = req.headers['x-forwarded-for'];
+    return typeof xff === 'string' && !xff.includes(',') ? xff.trim() : null;
+  }
+  const ip = req.headers['x-private-peer'];
+  return typeof ip === 'string' ? ip : null;
+}
 
 function validPeer(ip) {
   return net.isIP(ip) === 4 ? /^100\./.test(ip) && +ip.split('.')[1] >= 64 && +ip.split('.')[1] <= 127
@@ -38,7 +56,7 @@ function whois(ip) {
   const hit = whoCache.get(ip);
   if (hit && Date.now() - hit.at < 60e3) return Promise.resolve(hit.login);
   return new Promise(resolve => {
-    const req = http.get({ socketPath: CONFIG.tailscaleSocket, path: '/localapi/v0/whois?addr=' + encodeURIComponent(ip), headers: { Host: 'local-tailscaled.sock' }, timeout: 2500 }, res => {
+    const req = http.get({ socketPath: WHOIS_SOCKET, path: '/localapi/v0/whois?addr=' + encodeURIComponent(ip), headers: { Host: 'local-tailscaled.sock' }, timeout: 2500 }, res => {
       let body = '';
       res.on('data', d => { body += d; if (body.length > 131072) req.destroy(); });
       res.on('end', () => {
@@ -90,14 +108,17 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/ping') return send(res, 200, { ok: true }); // reachability only; reveals nothing
     if (req.method === 'POST' && p === '/api/guardian-repair') {
       const tok = req.headers['x-guardian-token'], want = guardianToken();
-      const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress) && !req.headers['x-private-peer'] && !req.headers['x-forwarded-for'];
+      const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress) && !req.headers['x-private-peer'] && !req.headers['x-forwarded-for'] && !req.headers['tailscale-user-login'];
       if (!local || typeof tok !== 'string' || tok.length !== want.length || !crypto.timingSafeEqual(Buffer.from(tok), Buffer.from(want))) return send(res, 403, { error: 'Forbidden' });
       const b = await readBody(req);
       return send(res, 202, await startRepair({ message: b.message, engine: 'auto', origin: 'guardian' }));
     }
     if (!DEV_OPEN) {
-      const ip = req.headers['x-private-peer'];
-      who = typeof ip === 'string' && validPeer(ip) ? await whois(ip) : null;
+      const ip = peerAddress(req);
+      who = ip && validPeer(ip) ? await whois(ip) : null;
+      const claimed = req.headers['tailscale-user-login'];
+      if (who && typeof claimed === 'string' && claimed.toLowerCase() !== who.toLowerCase()) who = null; // Serve's header must agree with whois
+      if (who && OWNERS.size && !OWNERS.has(who.toLowerCase())) { logIncident({ kind: 'refused', by: who }); who = null; }
       if (!who) return send(res, 403, p.startsWith('/api/') ? { error: 'Open this from one of your own devices on your private network.' } : '<!doctype html><meta name=viewport content="width=device-width"><body style="background:#0b0d12;color:#e8eaf0;font:16px system-ui;padding:24px">Open this from one of your own devices on your private network.</body>');
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -112,7 +133,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/ping') return send(res, 200, { ok: true });
     if (req.method === 'GET' && p === '/api/status') {
       const s = await status(url.searchParams.get('fresh') === '1');
-      const extra = url.searchParams.get('accounts') === '1' ? { accounts: await accountChecks() } : {};
+      const extra = url.searchParams.get('accounts') === '1' ? { accounts: await allSignins(), order: engineOrder('auto') } : {};
       return send(res, 200, { ...s, ...extra, release: await lastAgentRelease(), repair: busy() || null, actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '' }])) });
     }
     if (req.method === 'GET' && p === '/api/incidents') return send(res, 200, { incidents: readIncidents(40) });
@@ -125,10 +146,11 @@ const server = http.createServer(async (req, res) => {
       statusCache = null;
       return send(res, r.ok ? 200 : 500, { ...r, status: await status(true) });
     }
+    if (req.method === 'GET' && p === '/api/engines') return send(res, 200, { engines: await allSignins(), order: engineOrder('auto') });
     if (req.method === 'GET' && p === '/api/repairs') return send(res, 200, { repairs: listConvs(), running: busy() || null });
     if (req.method === 'POST' && p === '/api/repair') {
       const b = await readBody(req);
-      const engine = ['auto', 'claude', 'chatgpt'].includes(b.engine) ? b.engine : 'auto';
+      const engine = ['auto', ...ENGINES].includes(b.engine) ? b.engine : 'auto';
       const r = await startRepair({ convId: b.id || null, message: b.message, engine });
       logIncident({ kind: 'repair-started', conversation: r.id, engine, by: who });
       return send(res, 202, r);

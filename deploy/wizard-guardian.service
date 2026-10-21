@@ -4,7 +4,7 @@ Description=Wizard Guardian: checks every link to the agent and repairs broken p
 [Service]
 Type=oneshot
 WorkingDirectory=%h/apps/wizard-troubleshooter
-ExecStart=%h/.local/bin/node %h/apps/wizard-troubleshooter/bin/guardian.mjs
+ExecStart=/usr/bin/env node %h/apps/wizard-troubleshooter/bin/guardian.mjs
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Host values go in a drop-in: WIZARD_PUBLIC_NAME, GUARDIAN_THREAD=<Wizard thread id for repair reports>
 TimeoutStartSec=900

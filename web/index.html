@@ -45,6 +45,12 @@ a.back { color: var(--accent); text-decoration: none; font-weight: 600; font-siz
 .msg.agent { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
 .msg.agent code { background: var(--surface2); padding: 1px 5px; border-radius: 5px; font-size: 14px; }
 .msg .who { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+.signin { align-self: stretch; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid #e0a84a; border-radius: 12px; padding: 10px 12px; font-size: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.signin span { flex: 1 1 220px; }
+.signin a { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); color: var(--text); text-decoration: none; background: var(--surface2); white-space: nowrap; }
+.eng { display: grid; gap: 6px; }
+.eng .row { gap: 10px; }
+.eng .open { font-size: 13px; color: var(--text); text-decoration: underline; white-space: nowrap; }
 .note { align-self: center; font-size: 13px; color: var(--muted); text-align: center; max-width: 92%; }
 .working { align-self: flex-start; font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; max-width: 92%; }
 .working .step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -116,8 +122,9 @@ button:disabled { opacity: .5; cursor: default; }
   <div class="list" id="incidents"><div class="row"><div class="m d">Nothing yet.</div></div></div>
   <h2>Who answers</h2>
   <div class="list"><div class="row"><div class="m"><select id="engine" class="btn" aria-label="Who answers">
-    <option value="auto">Claude, then ChatGPT if Claude can't</option><option value="claude">Claude only</option><option value="chatgpt">ChatGPT only</option>
-  </select><div class="d" id="acct" style="margin-top:6px"></div></div></div></div>
+    <option value="auto">Claude, then ChatGPT, then Tinfoil</option><option value="claude">Claude only</option><option value="chatgpt">ChatGPT only</option><option value="tinfoil">Tinfoil only (private)</option>
+  </select><div class="d" style="margin-top:6px">Each one uses the sign-in held by its Wizard connection app. None of them goes through your agent or the Agent Service.</div></div></div>
+  <div class="eng" id="acct"></div></div>
 </div></div>
 
 <script>
@@ -127,6 +134,7 @@ button:disabled { opacity: .5; cursor: default; }
   const md = s => esc(s).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
   const H = { 'Content-Type': 'application/json', 'X-Wizard-Troubleshoot': '1' };
   const ENGINE_KEY = 'wizard-troubleshoot-engine';
+  const NAMES = { claude: 'Claude', chatgpt: 'ChatGPT', tinfoil: 'Tinfoil' };
   if (window.self !== window.top) document.body.classList.add('hosted');
   $('engine').value = localStorage.getItem(ENGINE_KEY) || 'auto';
   $('engine').addEventListener('change', () => localStorage.setItem(ENGINE_KEY, $('engine').value));
@@ -163,7 +171,7 @@ button:disabled { opacity: .5; cursor: default; }
     if (bad.length) $('alertText').textContent = `I can already see a problem with ${bad[0].label.replace(/^Your /, 'your ')}: ${bad[0].detail.replace(/\.$/, '').toLowerCase()}. Tap below and I'll fix it.`;
     $('checks').innerHTML = s.checks.map(c => `<div class="row"><span class="dot ${c.ok ? (c.slow ? 'warn' : 'ok') : 'bad'}"></span><div class="m"><div>${esc(c.label)}</div><div class="d">${esc(c.detail)}</div></div></div>`).join('');
     $('fixes').innerHTML = Object.entries(actions).map(([k, a]) => `<button class="btn" type="button" data-act="${esc(k)}">${esc(a.label)}</button>`).join('');
-    if (s.accounts) $('acct').textContent = s.accounts.map(a => `${a.label.replace(' subscription', '')}: ${a.ok ? 'ready' : 'signed out'}`).join(' · ');
+    if (s.accounts) $('acct').innerHTML = s.accounts.map(a => `<div class="row" data-engine="${esc(a.engine)}"><span class="dot ${a.ok ? 'ok' : 'bad'}"></span><div class="m"><div>${esc(a.name)} · ${esc(a.app)}</div><div class="d">${esc(a.detail)}</div></div>${a.ok ? '' : `<a class="open" href="${esc(a.open)}" data-openapp="${esc(a.appId)}">Open ${esc(a.app)}</a>`}</div>`).join('');
     if (s.repair && !current) openConv(s.repair.convId);
   }
   async function refresh(fresh, accounts) {
@@ -198,12 +206,17 @@ button:disabled { opacity: .5; cursor: default; }
   }
   function paintEvent(ev) {
     $('welcome').hidden = true;
+    if (ev.type === 'signin') {
+      const d = document.createElement('div'); d.className = 'signin';
+      d.innerHTML = `<span>${esc(ev.text)}</span>${ev.open ? `<a href="${esc(ev.open)}" data-openapp="${esc(ev.appId || '')}">Open ${esc(ev.app)}</a>` : ''}`;
+      log.insertBefore(d, log.querySelector('.working')); return toBottom();
+    }
     if (ev.type === 'tool' || ev.type === 'status') {
       workingRow().querySelector('.step').textContent = ev.type === 'tool' ? 'Checking: ' + ev.text.replace(/^(Bash|Shell): /, '') : ev.text;
       return toBottom();
     }
     const d = document.createElement('div');
-    if (ev.type === 'text') { d.className = 'msg ' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="who">${ev.engine === 'chatgpt' ? 'ChatGPT' : 'Claude'}</div>${md(ev.text)}` : esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
+    if (ev.type === 'text') { d.className = 'msg ' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="who">${esc(NAMES[ev.engine] || 'Claude')} · via the ${esc(NAMES[ev.engine] || 'Claude')} app</div>${md(ev.text)}` : esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
     else if (ev.type === 'note') { d.className = 'note'; d.textContent = ev.text; }
     else return;
     log.insertBefore(d, log.querySelector('.working')); toBottom();
@@ -248,6 +261,9 @@ button:disabled { opacity: .5; cursor: default; }
     } catch (e) { setRunning(false); $('input').value = message; paintEvent({ type: 'note', text: e.message }); }
   }
   document.addEventListener('click', e => {
+    // Inside the Wizard shell, open the connection app in its own window; on the bare page follow the link.
+    const o = e.target.closest('[data-openapp]');
+    if (o) { try { if (window.parent !== window && window.parent.WizOpenApp?.(o.dataset.openapp)) { e.preventDefault(); return; } } catch (_) {} return; }
     const c = e.target.closest('[data-say]'); if (c) return say(c.dataset.say);
     if (e.target.closest('[data-new]')) newChat();
   });
