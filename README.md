@@ -63,6 +63,12 @@ Install (Caddy box): copy `deploy/*.service` and `deploy/wizard-guardian.timer` 
 with `WIZARD_PUBLIC_NAME` (and `GUARDIAN_THREAD` for the guardian), add `deploy/troubleshoot.caddy` to the
 private site block, validate Caddy, reload. Units: `wizard-troubleshooter.service` (port 9691),
 `wizard-guardian.service` + `.timer`.
+Every new Wizard OS box gets this native install from the installer (wizard-app-manager `wam troubleshooter`), pinned to
+the commit its release names: units, a generated drop-in with this box's layout (owner login from the box's own
+Tailscale sign-in, shell/Agent Service ports and containers from App Manager), guardian report-only, and `/troubleshoot`
+on every shell HTTPS port. A box whose Hermes runs as the `hermes-agent` app has no host Hermes port: `HERMES_PORT=0`
+judges Hermes from the Agent Service's `upstream_reachable` and `HERMES_CONTAINER` restarts it. `GUARDIAN_TZ` sets the
+time zone of the guardian's reports (default: the server's).
 State: `~/.local/state/wizard-troubleshooter/` (incidents.jsonl, conversations/, guardian.json).
 Tests: `npm test` (service, guardian, provider routing/fallback/sign-ins, Tinfoil and ChatGPT tool loop, owner gate, no secrets in logs); `tests/ui/chat-qa.cjs` (phone-size chat flow in Playwright).
 

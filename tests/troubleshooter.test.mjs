@@ -119,3 +119,26 @@ test('guardian waits while an Agent Service deploy holds deploy.lock (fixture lo
   const out = execFileSync(NODE, [path.join(APP, 'bin/guardian.mjs'), '--dry-run'], { env, encoding: 'utf8' });
   assert.doesNotMatch(out, /update in progress/, 'lock released: checks run again');
 });
+
+test('fresh layout: Hermes without a host port is judged by the Agent Service and restarted as its container', async () => {
+  const state = tmp();
+  const http = await import('node:http');
+  let reachable = true;
+  const agent = http.createServer((q, r) => { r.writeHead(200, { 'Content-Type': 'application/json' }); r.end(JSON.stringify({ status: 'ok', upstream_reachable: reachable, queue: {} })); });
+  await new Promise(r => agent.listen(0, '127.0.0.1', r));
+  const env = hermetic(state, { AGENT_PORT: String(agent.address().port), HERMES_PORT: '0', HERMES_UNIT: '', HERMES_CONTAINER: 'hermes-agent_wizardapps-hermes-agent-engine-1', SHELL_PORT: '3', GATEWAY_PORT: '4' });
+  const statusJson = () => new Promise((resolve, reject) => {
+    const c = spawn(NODE, ['--input-type=module', '-e', "import { runChecks, ACTIONS, wiring } from './lib/checks.mjs'; const s = await runChecks(); console.log(JSON.stringify({ h: s.checks.find(c => c.id === 'hermes'), a: ACTIONS['restart:hermes'], w: wiring() }));"], { cwd: APP, env });
+    let out = ''; c.stdout.on('data', d => { out += d; }); c.on('exit', code => code ? reject(new Error('exit ' + code)) : resolve(JSON.parse(out)));
+  });
+  try {
+    let r = await statusJson();
+    assert.equal(r.h.ok, true);
+    assert.deepEqual(r.a.cmd, ['/bin/false', ['restart', 'hermes-agent_wizardapps-hermes-agent-engine-1']]);
+    assert.match(r.w, /no host port/);
+    reachable = false;
+    r = await statusJson();
+    assert.equal(r.h.ok, false);
+    assert.match(r.h.detail, /cannot reach/);
+  } finally { agent.close(); }
+});

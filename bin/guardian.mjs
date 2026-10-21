@@ -54,7 +54,10 @@ function startAiRepair(message) {
 }
 
 const bare = s => String(s || '').replace(/\.$/, '');
-const bkk = d => new Date(d).toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
+// Times in reports use the owner's zone (GUARDIAN_TZ, e.g. Asia/Bangkok), else the server's own zone.
+const ZONE = (() => { try { return new Intl.DateTimeFormat('en-GB', { timeZone: process.env.GUARDIAN_TZ || undefined }).resolvedOptions().timeZone; } catch { return Intl.DateTimeFormat().resolvedOptions().timeZone; } })();
+const ZONE_NAME = ZONE.split('/').pop().replace(/_/g, ' ');
+const bkk = d => new Date(d).toLocaleTimeString('en-GB', { timeZone: ZONE, hour: '2-digit', minute: '2-digit' });
 
 async function main() {
   const s = load();
@@ -118,7 +121,7 @@ async function main() {
     const mins = Math.max(1, Math.round((now - s.outage.since) / 60e3));
     logIncident({ kind: 'recovered', text: `Wizard is working again (problem lasted about ${mins} min).` });
     if (s.outage.reported) {
-      await postThread(`guardian-recovered-${s.outage.since}`, `**Wizard is working again.** The problem that started at ${bkk(s.outage.since)} (Bangkok) is fixed; it lasted about ${mins} min. Details: /troubleshoot/`);
+      await postThread(`guardian-recovered-${s.outage.since}`, `**Wizard is working again.** The problem that started at ${bkk(s.outage.since)} (${ZONE_NAME}) is fixed; it lasted about ${mins} min. Details: /troubleshoot/`);
     }
     s.outage = null;
   }
@@ -127,7 +130,7 @@ async function main() {
       ? `- ${a.label}: restarts didn't fix it, so I've asked your Claude/ChatGPT subscription to repair it. Follow along: /troubleshoot/#r=${a.conversation}`
       : `- ${a.label} stopped working (${bare(a.detail)}). I ${a.action.startsWith('rollback') ? 'undid the last update' : 'restarted it'}: ${a.fixed ? 'it works again.' : 'still not working, trying further steps.'}`);
     if (s.outage) s.outage.reported = true;
-    await postThread(`guardian-${now}`, `**Wizard fixed itself** at ${bkk(now)} (Bangkok).\n\n${lines.join('\n')}\n\nAnything still wrong? Open the Troubleshooter: /troubleshoot/`);
+    await postThread(`guardian-${now}`, `**Wizard fixed itself** at ${bkk(now)} (${ZONE_NAME}).\n\n${lines.join('\n')}\n\nAnything still wrong? Open the Troubleshooter: /troubleshoot/`);
   }
   save(s);
   console.log(JSON.stringify({ overall: status.overall, failing: failing.map(f => f.id), actions: actionsTaken.map(a => `${a.action}:${a.fixed}`) }));
