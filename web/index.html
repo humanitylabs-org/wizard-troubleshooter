@@ -18,6 +18,9 @@ body { display: flex; flex-direction: column; height: 100dvh; }
 body.hosted, html:has(> body.hosted) { background: transparent; }
 /* Inside a Wizard window the window's own title bar and Back handle navigation. */
 body.hosted a.back { display: none; }
+/* The window already says Troubleshooter: keep only the status, right-aligned. */
+body.hosted header h1 { visibility: hidden; }
+body.hosted header { padding-top: 4px; padding-bottom: 0; }
 button { font: inherit; color: inherit; }
 header { flex: none; display: flex; align-items: center; gap: 6px; padding: max(8px, env(safe-area-inset-top)) 12px 8px; }
 header h1 { font-size: 16px; font-weight: 600; margin: 0; flex: 1; }
