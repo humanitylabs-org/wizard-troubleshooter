@@ -1,5 +1,7 @@
 # Wizard Troubleshooter
 
+**Distribution candidate:** see [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md). The new normal-app package is isolated and reports recovery **not ready**; it cannot repair the host. The host-only installation described below is not automatically provisioned by that recipe. Do not merge the dependent default-app change as a working fresh-box repair solution yet.
+
 Wizard's backup line: open it, tap **My Wizard is down, please fix it**, and your own Claude or ChatGPT
 subscription fixes the server. It lives at `/troubleshoot/` on the owner's private Wizard address. It depends only on the
 private network and the HTTPS front door; the sign-in bridge, Wizard shell, Agent Service and Hermes can
