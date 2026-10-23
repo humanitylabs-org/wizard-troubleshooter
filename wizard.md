@@ -2,6 +2,7 @@
 wizard: 0.2
 id: wizard-troubleshooter
 name: Wizard Troubleshooter
+voice_names: [troubleshooter, troubleshooting, troubleshoot, fix wizard]
 type: service
 category: system
 version: 0.1.0
