@@ -314,6 +314,38 @@ test('Claude quota notices are errors, not successful synthetic model answers; p
   } finally { child.kill(); }
 });
 
+test('a Claude sign-in at its usage limit gives way to the agent\'s Claude sign-in: same engine, same tools, token passed only via env', async () => {
+  const state = tmp(), env = fakeClaude(state);
+  const AGENT_TOKEN = 'sk-ant-oat01-' + 'z'.repeat(40);
+  fs.writeFileSync(path.join(state, 'auth.json'), JSON.stringify({ credential_pool: { anthropic: [
+    { label: 'second', auth_type: 'oauth', priority: 0, access_token: AGENT_TOKEN, expires_at_ms: Date.now() + 3600e3 },
+    { label: 'claude_code', auth_type: 'oauth', priority: 1 }, // mirrors the app login, has no token: skipped
+  ] } }));
+  // The app login is limited; the agent login (seen via CLAUDE_CODE_OAUTH_TOKEN) answers.
+  fs.writeFileSync(env.CLAUDE_BIN, `#!/bin/sh
+if [ "$CLAUDE_CODE_OAUTH_TOKEN" = "${AGENT_TOKEN}" ]; then
+  echo '{"type":"system","subtype":"init","model":"claude-opus-5-5","tools":["mcp__repair__read_file"]}'
+  echo '{"type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"text","text":"Answered by the second sign-in."}]}}'
+  echo '{"type":"result","is_error":false}'
+else
+  echo '{"type":"system","subtype":"init","model":"claude-opus-5-5","tools":["mcp__repair__read_file"]}'
+  echo '{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"You\\u0027ve hit your weekly limit · resets 2pm (UTC)"}]}}'
+  echo '{"type":"result","is_error":true,"result":"You\\u0027ve hit your weekly limit · resets 2pm (UTC)"}'
+fi
+`, { mode: 0o755 });
+  const { port, child } = await startServer(hostEnv(state, { ...env, CHATGPT_AUTH_FILE: path.join(state, 'auth.json') }));
+  try {
+    const e = await engines(port);
+    assert.match(e.engines.find(a => a.engine === 'claude').detail, /2 Claude sign-ins/);
+    await setEngine(port, 'claude'); const c = await chat(port, 'hello', 'claude');
+    const ans = c.events.find(x => x.type === 'text' && x.role === 'agent');
+    assert.equal(ans?.engine, 'claude'); assert.match(ans.text, /second sign-in/);
+    assert.ok(c.events.some(x => x.type === 'note' && /usage limit/.test(x.text) && /same tools/.test(x.text)));
+    assert.deepEqual(c.order, ['claude'], 'still Claude: no engine switch');
+    assert.ok(!JSON.stringify(c).includes(AGENT_TOKEN), 'token never stored in the conversation');
+  } finally { child.kill(); }
+});
+
 test('picker: lists every provider with its real model, default is the first ready one (Claude), unavailable ones say why', async () => {
   const state = tmp();
   fs.writeFileSync(path.join(state, 'auth.json'), JSON.stringify({ providers: { 'openai-codex': { tokens: { access_token: fakeJwt() } } } }));
