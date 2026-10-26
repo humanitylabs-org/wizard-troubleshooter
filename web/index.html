@@ -245,6 +245,16 @@ button:disabled { opacity: .5; cursor: default; }
   }
   function paintEvent(ev) {
     $('welcome').hidden = true;
+    if (ev.type === 'approval-result') {
+      const row = log.querySelector(`[data-approval-row="${ev.approvalId}"]`);
+      if (row) { row.querySelectorAll('button').forEach(b => b.disabled = true); row.querySelector('.approval-state').textContent = ev.approved ? 'Approved' : 'Denied or expired'; }
+      return;
+    }
+    if (ev.type === 'approval') {
+      const d = document.createElement('div'); d.className = 'signin'; d.dataset.approvalRow = ev.approvalId;
+      d.innerHTML = `<strong class="approval-state">Owner approval required</strong><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto">${esc(ev.text)}</pre><div class="acts"><button class="act" data-approval="${esc(ev.approvalId)}" data-approved="true">Approve this exact action</button><button class="act" data-approval="${esc(ev.approvalId)}" data-approved="false">Deny</button></div>`;
+      log.insertBefore(d, log.querySelector('.working')); return toBottom();
+    }
     if (ev.type === 'signin') {
       const d = document.createElement('div'); d.className = 'signin';
       const offer = ev.offer && NAMES[ev.offer] ? `<button class="act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button>` : '';
@@ -270,6 +280,7 @@ button:disabled { opacity: .5; cursor: default; }
     log.querySelector('.after')?.remove();
     if (on) { workingRow(); return toBottom(); }
     log.querySelector('.working')?.remove();
+    log.querySelectorAll('[data-approval-row]').forEach(row => { row.querySelectorAll('button').forEach(b => b.disabled = true); if (row.querySelector('.approval-state').textContent === 'Owner approval required') row.querySelector('.approval-state').textContent = 'Expired'; });
     if (current && log.children.length) {
       const a = document.createElement('div'); a.className = 'after';
       a.innerHTML = '<button class="chip" type="button" data-say="Thanks, it works now.">It works now</button><button class="chip" type="button" data-say="It\'s still not working.">Still not working</button><button class="chip" type="button" data-new="1">Something else</button>';
@@ -304,6 +315,11 @@ button:disabled { opacity: .5; cursor: default; }
     } catch (e) { setRunning(false); $('input').value = message; paintEvent({ type: 'note', text: e.message }); }
   }
   document.addEventListener('click', e => {
+    const approval = e.target.closest('[data-approval]');
+    if (approval) {
+      const row = approval.closest('[data-approval-row]'); row.querySelectorAll('button').forEach(b => b.disabled = true);
+      api('repair/approve', { method: 'POST', headers: H, body: JSON.stringify({ id: current, approvalId: approval.dataset.approval, approved: approval.dataset.approved === 'true' }) }).catch(err => { row.querySelector('.approval-state').textContent = err.message; }); return;
+    }
     // Inside the Wizard shell, open the connection app in its own window; on the bare page follow the link.
     const o = e.target.closest('[data-openapp]');
     if (o) { try { if (o.dataset.openapp && window.parent !== window && window.parent.WizOpenApp?.(o.dataset.openapp)) { e.preventDefault(); return; } } catch (_) {} return; }
