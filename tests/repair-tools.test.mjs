@@ -1,0 +1,51 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+const root = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'repair-contract-'));
+process.env.TROUBLESHOOT_STATE = path.join(root, 'state');
+process.env.REPAIR_POLICY_FILE = path.join(root, 'policy.json');
+const file = path.join(root, 'config.json'), marker = path.join(root, 'executed');
+const policy = { files: [file], commands: { verify: { executable: process.execPath, args: ['-e', `require('fs').writeFileSync(${JSON.stringify(marker)}, process.cwd())`], cwd: root } } };
+fs.writeFileSync(process.env.REPAIR_POLICY_FILE, JSON.stringify(policy));
+fs.writeFileSync(file, '{"working":false}\n');
+const { callTool, toolDefs } = await import('../lib/toolloop.mjs');
+const hash = s => crypto.createHash('sha256').update(s).digest('hex');
+test('shared schemas expose bounded file/command tools; extra args and non-allowlisted targets denied', async () => {
+  assert.ok(['read_file','write_file','run_command','repair_scope'].every(n => toolDefs().some(t => t.name === n)));
+  assert.match(await callTool('read_file', { path: '/etc/passwd' }), /outside.*allowlist/);
+  assert.match(await callTool('run_command', { id: 'verify', command: 'touch x' }), /schema/);
+  assert.match(await callTool('run_command', { id: 'missing' }), /outside.*allowlist/);
+});
+test('write denied before approval; approved write backed up, persisted, and hash readback survives scrub', async () => {
+  const before = fs.readFileSync(file,'utf8'), read = JSON.parse(await callTool('read_file',{path:file}));
+  assert.equal(read.sha256, hash(before));
+  const args = { path:file, expected_sha256:read.sha256, content:'{"working":true}\n' };
+  assert.match(await callTool('write_file',args),/approval.*unavailable/);
+  assert.equal(fs.readFileSync(file,'utf8'),before);
+  assert.match(await callTool('write_file',args,{authorize:async()=>false}),/approval denied/);
+  const result = JSON.parse(await callTool('write_file',args,{authorize:async()=>true}));
+  assert.equal(result.ok,true); assert.equal(fs.readFileSync(result.backup,'utf8'),before);
+  assert.equal(fs.readFileSync(file,'utf8'),args.content);
+  assert.equal(JSON.parse(await callTool('read_file',{path:file})).sha256,hash(args.content));
+  assert.match(await callTool('write_file',args,{authorize:async()=>true}),/Stale hash/);
+});
+test('file modified during approval fails closed; symlink and hardlink denied',async()=>{
+  const before = fs.readFileSync(file,'utf8');
+  const args={path:file,expected_sha256:hash(before),content:'overwrite'};
+  assert.match(await callTool('write_file',args,{authorize:async()=>{fs.writeFileSync(file,'concurrent');return true}}),/changed.*approval/);
+  assert.equal(fs.readFileSync(file,'utf8'),'concurrent');
+  const link=path.join(root,'other');fs.linkSync(file,link);
+  assert.match(await callTool('read_file',{path:file}),/unlinked regular/);fs.unlinkSync(link);
+  fs.unlinkSync(file);fs.symlinkSync(marker,file);
+  assert.match(await callTool('read_file',{path:file}),/Symlink/);fs.unlinkSync(file);fs.writeFileSync(file,before);
+});
+test('command requires owner grant, executes fixed argv/cwd, and policy change during approval denied',async()=>{
+  assert.match(await callTool('run_command',{id:'verify'}),/approval/);assert.equal(fs.existsSync(marker),false);
+  const r=JSON.parse(await callTool('run_command',{id:'verify'},{authorize:async()=>true}));
+  assert.equal(r.ok,true);assert.equal(fs.readFileSync(marker,'utf8'),root);fs.unlinkSync(marker);
+  assert.match(await callTool('run_command',{id:'verify'},{authorize:async()=>{policy.commands.verify.args=['-e','process.exit(0)'];fs.writeFileSync(process.env.REPAIR_POLICY_FILE,JSON.stringify(policy));return true}}),/policy changed/);
+  assert.equal(fs.existsSync(marker),false);
+});

@@ -7,6 +7,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const APP = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const NODE = process.execPath;
@@ -60,6 +61,37 @@ async function chat(port, message, engine) {
   for (let i = 0; i < 150; i++) { c = await (await fetch(`http://127.0.0.1:${port}/troubleshoot/api/repair/${id}`)).json(); if (!c.running) break; await sleep(100); }
   return { ...c, order };
 }
+
+test('owner approval HTTP: no mutation before click, conversation-bound, single use; bridge needs its private token', async () => {
+  const state = tmp(), fixture = path.join(state, 'fixture.json'), policy = path.join(state, 'policy.json');
+  const before = '{"working":false}\n', content = '{"working":true}\n';
+  fs.writeFileSync(fixture, before);
+  fs.writeFileSync(policy, JSON.stringify({ files: [fixture], commands: {} }));
+  fs.writeFileSync(path.join(state, 'auth.json'), JSON.stringify({ providers: { 'openai-codex': { tokens: { access_token: fakeJwt() } } } }));
+  let n = 0;
+  const fake = await listen(async (req, res) => {
+    await readBody(req); n++;
+    const output = n === 1 ? [{ type: 'function_call', call_id: 'write1', name: 'write_file', arguments: JSON.stringify({ path: fixture, expected_sha256: crypto.createHash('sha256').update(before).digest('hex'), content }) }] : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Saved.' }] }];
+    res.end(`data: ${JSON.stringify({ type: 'response.completed', response: { output } })}\n\n`);
+  });
+  const { port, child } = await startServer(hostEnv(state, { REPAIR_POLICY_FILE: policy, CHATGPT_AUTH_FILE: path.join(state, 'auth.json'), CHATGPT_BASE_URL: `http://127.0.0.1:${fake.port}` }));
+  const base = `http://127.0.0.1:${port}/troubleshoot/`;
+  try {
+    assert.equal((await fetch(base + 'internal/repair-tools', { method: 'POST', headers: H, body: '{"method":"tools/list"}' })).status, 403);
+    const { id } = await (await fetch(base + 'api/repair', { method: 'POST', headers: H, body: JSON.stringify({ engine: 'chatgpt', message: 'repair fixture' }) })).json();
+    let c, approval;
+    for (let i=0; i<100; i++) { c=await (await fetch(base+'api/repair/'+id)).json(); approval=c.events.find(e=>e.type==='approval'); if(approval)break; await sleep(30); }
+    assert.ok(approval); assert.equal(fs.readFileSync(fixture,'utf8'),before);
+    const approve = (conv, yes) => fetch(base+'api/repair/approve',{method:'POST',headers:H,body:JSON.stringify({id:conv,approvalId:approval.approvalId,approved:yes})});
+    assert.equal((await approve('0000000000000000',true)).status,409);
+    assert.equal((await approve(id,true)).status,200);
+    assert.equal((await approve(id,true)).status,409);
+    for(let i=0;i<100;i++){c=await (await fetch(base+'api/repair/'+id)).json();if(!c.running)break;await sleep(30);}
+    assert.equal(fs.readFileSync(fixture,'utf8'),content);
+    assert.ok(c.events.some(e=>e.type==='approval-result'&&e.approved));
+    assert.deepEqual(fs.readdirSync(path.join(state,'repair-backups')).map(f=>fs.readFileSync(path.join(state,'repair-backups',f),'utf8')),[before]);
+  } finally { child.kill(); fake.s.close(); }
+});
 
 test('routing: default order is Claude, ChatGPT, Tinfoil; a picked engine is the only one tried', async () => {
   const state = tmp();
@@ -258,6 +290,18 @@ function fakeClaude(state, model = 'claude-opus-5-5') {
   return { CLAUDE_CONFIG_DIR: dir, CLAUDE_BIN: bin };
 }
 
+test('Claude quota notices are errors, not successful synthetic model answers; picked engine never changes', async () => {
+  const state = tmp(), env = fakeClaude(state);
+  fs.writeFileSync(env.CLAUDE_BIN, `#!/bin/sh\necho '{"type":"system","subtype":"init","model":"claude-opus-5-5","tools":["mcp__repair__read_file"]}'\necho '{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"Weekly limit reached"}]}}'\necho '{"type":"result","is_error":true,"result":"Weekly limit reached"}'\n`, { mode: 0o755 });
+  const { port, child } = await startServer(hostEnv(state, env));
+  try {
+    await setEngine(port,'claude'); const c = await chat(port,'hello','claude');
+    assert.ok(!c.events.some(e=>e.type==='text'&&e.role==='agent'));
+    assert.ok(c.events.some(e=>e.type==='note'&&/Weekly limit/.test(e.text)));
+    assert.deepEqual(c.order,['claude']); assert.equal((await engines(port)).selected,'claude');
+  } finally { child.kill(); }
+});
+
 test('picker: lists every provider with its real model, default is the first ready one (Claude), unavailable ones say why', async () => {
   const state = tmp();
   fs.writeFileSync(path.join(state, 'auth.json'), JSON.stringify({ providers: { 'openai-codex': { tokens: { access_token: fakeJwt() } } } }));
@@ -269,7 +313,7 @@ test('picker: lists every provider with its real model, default is the first rea
     const by = Object.fromEntries(e.engines.map(a => [a.engine, a]));
     assert.equal(by.claude.model, 'claude-opus-5-5', 'model read from Claude Code itself');
     assert.equal(by.claude.modelLabel, 'Opus 5.5');
-    assert.equal(by.chatgpt.modelLabel, 'GPT-5.6 Luna');
+    assert.equal(by.chatgpt.modelLabel, 'GPT-6.1 Sol');
     assert.equal(by.tinfoil.ok, false);
     assert.equal(by.tinfoil.reason, 'Not available', 'disabled provider carries a short reason');
     const c = await chat(port, 'hi', e.selected);

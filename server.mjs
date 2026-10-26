@@ -7,7 +7,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease } from './lib/checks.mjs';
-import { startRepair, loadConv, listConvs, busy, stopRepair } from './lib/repair.mjs';
+import { startRepair, loadConv, listConvs, busy, stopRepair, bridgeToken, bridgeRequest, decideApproval } from './lib/repair.mjs';
+import { toolDefs } from './lib/toolloop.mjs';
 import { allSignins, engineOrder, ENGINES, selectedEngine, saveEngine } from './lib/providers.mjs';
 
 function guardianToken() {
@@ -102,6 +103,12 @@ const server = http.createServer(async (req, res) => {
     let p = url.pathname;
     if (!p.startsWith(PREFIX)) return send(res, 404, { error: 'Not found' });
     p = p.slice(PREFIX.length) || '/';
+    if (req.method === 'POST' && p === '/internal/repair-tools') {
+      const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+      const supplied = req.headers.authorization || '', expected = 'Bearer ' + bridgeToken;
+      if (!local || req.headers.origin || req.headers['x-forwarded-for'] || supplied.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) return send(res, 403, { error: 'Forbidden' });
+      return send(res, 200, await bridgeRequest(await readBody(req, 131072)));
+    }
 
     // Identity: Caddy sets X-Private-Peer from the real Tailscale connection; client copies are stripped.
     let who = 'dev';
@@ -147,7 +154,7 @@ const server = http.createServer(async (req, res) => {
       statusCache = null;
       return send(res, r.ok ? 200 : 500, { ...r, status: await status(true) });
     }
-    if (req.method === 'GET' && p === '/api/engines') { const engines = await allSignins(); return send(res, 200, { engines, order: engineOrder('auto'), selected: selectedEngine(engines) }); }
+    if (req.method === 'GET' && p === '/api/engines') { const engines = await allSignins(); return send(res, 200, { engines, order: engineOrder('auto'), selected: selectedEngine(engines), tools: toolDefs(), permissions: 'shared-owner-approved-allowlist' }); }
     if (req.method === 'POST' && p === '/api/engine') { const b = await readBody(req); return send(res, 200, { selected: saveEngine(b.engine) }); }
     if (req.method === 'GET' && p === '/api/repairs') return send(res, 200, { repairs: listConvs(), running: busy() || null });
     if (req.method === 'POST' && p === '/api/repair') {
@@ -158,6 +165,13 @@ const server = http.createServer(async (req, res) => {
       return send(res, 202, r);
     }
     if (req.method === 'POST' && p === '/api/repair/stop') return send(res, 200, { stopped: stopRepair() });
+    if (req.method === 'POST' && p === '/api/repair/approve') {
+      const b = await readBody(req);
+      if (typeof b.approved !== 'boolean') return send(res, 400, { error: 'Approval must be boolean' });
+      const r = decideApproval(b.approvalId, b.id, b.approved);
+      logIncident({ kind: 'repair-approval', by: who, approvalId: b.approvalId, approved: r.approved });
+      return send(res, 200, r);
+    }
     const m = p.match(/^\/api\/repair\/([a-f0-9]{16})$/);
     if (req.method === 'GET' && m) {
       const c = loadConv(m[1]);

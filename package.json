@@ -4,5 +4,5 @@
   "private": true,
   "type": "module",
   "description": "Wizard's backup line: health checks, one-tap fixes, a guardian that repairs broken links, and a repair chat that uses the box's Claude, ChatGPT and Tinfoil connection apps directly, bypassing the Agent Service and Hermes.",
-  "scripts": { "start": "node server.mjs", "status": "node bin/status.mjs --accounts", "test": "node --test tests/troubleshooter.test.mjs tests/providers.test.mjs" }
+  "scripts": { "start": "node server.mjs", "status": "node bin/status.mjs --accounts", "test": "node --test tests/troubleshooter.test.mjs tests/providers.test.mjs tests/repair-tools.test.mjs" }
 }
