@@ -53,12 +53,21 @@ async function startServer(env) {
   throw new Error('server did not start');
 }
 const H = { 'Content-Type': 'application/json', 'X-Wizard-Troubleshoot': '1' };
-async function chat(port, message, engine) {
+async function chat(port, message, engine, approvalCheck) {
   const r = await fetch(`http://127.0.0.1:${port}/troubleshoot/api/repair`, { method: 'POST', headers: H, body: JSON.stringify({ message, engine }) });
   assert.equal(r.status, 202);
   const { id, order } = await r.json();
   let c;
-  for (let i = 0; i < 150; i++) { c = await (await fetch(`http://127.0.0.1:${port}/troubleshoot/api/repair/${id}`)).json(); if (!c.running) break; await sleep(100); }
+  const decided = new Set();
+  for (let i = 0; i < 150; i++) {
+    c = await (await fetch(`http://127.0.0.1:${port}/troubleshoot/api/repair/${id}`)).json();
+    for(const a of c.events.filter(e=>e.type==='approval'&&!decided.has(e.approvalId))) {
+      if(!approvalCheck)continue;
+      approvalCheck(JSON.parse(a.text)); decided.add(a.approvalId);
+      assert.equal((await fetch(`http://127.0.0.1:${port}/troubleshoot/api/repair/approve`,{method:'POST',headers:H,body:JSON.stringify({id,approvalId:a.approvalId,approved:true})})).status,200);
+    }
+    if (!c.running) break; await sleep(100);
+  }
   return { ...c, order };
 }
 
@@ -196,7 +205,10 @@ test('Tinfoil tool loop: diagnoses with checks and applies a fixed fix to a fail
   });
   const { port, child, logs } = await startServer(hostEnv(state, { TINFOIL_URL: `http://127.0.0.1:${fake.port}`, TINFOIL_TOKEN_FILE: path.join(state, 'tf-token.json'), DOCKER_BIN: docker, SHELL_CONTAINER: 'fake-shell' }));
   try {
-    const c = await chat(port, 'check the box status and fix it', 'tinfoil');
+    const c = await chat(port, 'check the box status and fix it', 'tinfoil', request=>{
+      assert.equal(request.tool,'run_fix');assert.equal(request.args.action,'restart:shell');
+      assert.equal(fs.existsSync(marker),false,'no restart before owner approval');
+    });
     assert.equal(seen[0].auth, 'Bearer ' + TINFOIL_GATEWAY_SECRET);
     assert.equal(seen[0].body.model, 'glm-5-3', 'picks a chat model, not an embedding model');
     assert.match(seen[0].body.messages[0].content, /Wizard Repair Technician/);

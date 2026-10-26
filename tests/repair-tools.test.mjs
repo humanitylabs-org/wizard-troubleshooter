@@ -42,6 +42,25 @@ test('file modified during approval fails closed; symlink and hardlink denied',a
   fs.unlinkSync(file);fs.symlinkSync(marker,file);
   assert.match(await callTool('read_file',{path:file}),/Symlink/);fs.unlinkSync(file);fs.writeFileSync(file,before);
 });
+test('structured grants enforce read-only and bounded service config, including after approval', async()=>{
+  const saved=JSON.parse(fs.readFileSync(process.env.REPAIR_POLICY_FILE));
+  const before=fs.readFileSync(file,'utf8');
+  const p={...saved,files:[{path:file,writable:false}]};
+  fs.writeFileSync(process.env.REPAIR_POLICY_FILE,JSON.stringify(p));
+  const args={path:file,expected_sha256:hash(before),content:'[Service]\nRestartSec=6\n'};
+  assert.match(await callTool('write_file',args,{authorize:async()=>true}),/read-only/);
+  p.files[0]={path:file,writable:true,format:'restart-delay'};fs.writeFileSync(process.env.REPAIR_POLICY_FILE,JSON.stringify(p));
+  assert.match(await callTool('write_file',{...args,content:'[Service]\nExecStart=/bin/sh\n'},{authorize:async()=>true}),/Only.*RestartSec/);
+  assert.match(await callTool('write_file',args,{authorize:async()=>{p.files[0].writable=false;fs.writeFileSync(process.env.REPAIR_POLICY_FILE,JSON.stringify(p));return true}}),/read-only/);
+  p.files[0].writable=true;fs.writeFileSync(process.env.REPAIR_POLICY_FILE,JSON.stringify(p));
+  const lock=path.join(root,'standby.lock');process.env.REPAIR_STANDBY_LOCK=lock;fs.writeFileSync(lock,'standby');
+  assert.match(await callTool('write_file',args,{authorize:async()=>true}),/Standby role fence/);
+  assert.match(await callTool('run_command',{id:'verify'},{authorize:async()=>true}),/Standby role fence/);
+  fs.unlinkSync(lock);delete process.env.REPAIR_STANDBY_LOCK;
+  assert.equal(JSON.parse(await callTool('write_file',args,{authorize:async()=>true})).ok,true);
+  fs.writeFileSync(file,before);fs.writeFileSync(process.env.REPAIR_POLICY_FILE,JSON.stringify(saved));
+});
+
 test('command requires owner grant, executes fixed argv/cwd, and policy change during approval denied',async()=>{
   assert.match(await callTool('run_command',{id:'verify'}),/approval/);assert.equal(fs.existsSync(marker),false);
   const r=JSON.parse(await callTool('run_command',{id:'verify'},{authorize:async()=>true}));
