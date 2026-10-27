@@ -93,6 +93,12 @@ test('real main-agent reply check detects a controlled HTTP 200 auth failure and
     good = true; const b = JSON.parse(await cmd(['--input-type=module', '-e', js, 'force'], e)); assert.equal(b.ok, true); assert.equal(calls, 2);
   } finally { api.close(); }
 });
+test('an uninstalled optional Tinfoil app is not an outage or a promise it can reply', async () => {
+  const state = tmp(), reg = path.join(state, 'apps.json'); fs.writeFileSync(reg, '{"apps":[]}');
+  const r = JSON.parse(await cmd(['--input-type=module', '-e', "import {engineReply} from './lib/providers.mjs';console.log(JSON.stringify(await engineReply('tinfoil')));"], env(state, { WIZARD_APPS_FILE: reg })));
+  assert.equal(r.ok, false); assert.equal(r.skipped, true);
+});
+
 test('fresh-box reply check uses the Hermes container loopback API, not the Agent Service health flag', async () => {
   const state = tmp(), marker = path.join(state, 'argv'), docker = path.join(state, 'docker');
   fs.writeFileSync(docker, `#!/bin/sh\nprintf '%s\\n' "$@" > '${marker}'\nprintf '%s\\n' '{"text":"No Anthropic credentials found"}'\n`, { mode: 0o755 });
