@@ -222,7 +222,13 @@ button:disabled { opacity: .5; cursor: default; }
     if (s.repair && !current) openConv(s.repair.convId);
   }
   async function refresh(fresh, accounts) {
-    try { paintStatus(await api('status?' + (fresh ? 'fresh=1&' : '') + (accounts ? 'accounts=1' : ''))); if (!accounts && !running) loadEngines(); }
+    const query = new URLSearchParams();
+    if (fresh) query.set('fresh', '1');
+    if (accounts) query.set('accounts', '1');
+    // An empty trailing ? survives some private gateways' identity rewrite as
+    // /verify? rather than /verify, so ordinary page arrival must use /status.
+    const route = 'status' + (query.size ? '?' + query : '');
+    try { paintStatus(await api(route)); if (!accounts && !running) loadEngines(); }
     catch { $('pillDot').className = 'dot bad'; $('pillText').textContent = 'Can\'t check'; }
   }
   async function loadIncidents() {
