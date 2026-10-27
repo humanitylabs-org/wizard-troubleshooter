@@ -50,7 +50,7 @@ a.back { color: var(--text); text-decoration: none; font-size: 24px; line-height
 .signin, .note { font-size: 14px; color: var(--muted); }
 .signin { display: flex; flex-direction: column; gap: 8px; color: var(--text); }
 .signin .acts { display: flex; gap: 8px; flex-wrap: wrap; }
-.act { min-height: 40px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 10px; border: 0; background: var(--surface2); color: var(--text); text-decoration: none; cursor: pointer; font-size: 14px; }
+.act { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 10px; border: 0; background: var(--surface2); color: var(--text); text-decoration: none; cursor: pointer; font-size: 14px; }
 .working { font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
 .working .step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .spin { width: 13px; height: 13px; flex: none; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: s .9s linear infinite; }
@@ -98,6 +98,7 @@ button:disabled { opacity: .5; cursor: default; }
   <button class="pill" id="pill" type="button" aria-label="Show system details"><span class="dot" id="pillDot"></span><span id="pillText">Checking…</span></button>
 </header>
 
+<div id="reconnect" class="signin" role="status" hidden style="padding:8px 16px"></div>
 <div id="scroll"><div class="wrap">
   <section class="welcome" id="welcome">
     <div class="big">What's wrong?</div>
@@ -193,11 +194,20 @@ button:disabled { opacity: .5; cursor: default; }
   }
   const when = iso => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+  // Reuse the existing app-link and action components; this remains available with the normal chat down.
+  function paintReconnect(a) {
+    $('reconnect').hidden = !a;
+    if (!a) { $('reconnect').innerHTML = ''; return; }
+    const name = NAMES[a.engine];
+    $('pillDot').className = 'dot bad'; $('pillText').textContent = `${name} sign-in expired`;
+    $('reconnect').innerHTML = `<strong>${esc(name)} sign-in expired</strong><div class="acts">${appLink(a, `Sign in to ${name} again`, 'act')}</div>`;
+  }
+
   // Status: one pill in the header, details on tap.
   let actions = {}, lastStatus = null;
   function paintStatus(s) {
     lastStatus = s; actions = s.actions || actions;
-    const bad = s.checks.filter(c => !c.ok);
+    const bad = s.checks.filter(c => !c.ok && !c.skipped);
     $('pillDot').className = 'dot ' + (s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'warn' : 'bad');
     $('pillText').textContent = s.overall === 'ok' ? 'All working' : bad.length === 1 ? bad[0].label + ': problem' : bad.length + ' problems';
     $('alert').hidden = s.overall === 'ok';
@@ -208,10 +218,11 @@ button:disabled { opacity: .5; cursor: default; }
       setEngines(s.accounts, s.engine);
       $('acct').innerHTML = s.accounts.map(a => `<div class="row"><span class="dot ${a.ok ? 'ok' : 'bad'}"></span><div class="m">${esc(a.app)}<div class="d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok || !a.open ? '' : appLink(a, a.installed === false ? 'Get app' : 'Sign in', '')}</div>`).join('');
     }
+    paintReconnect(s.reconnect);
     if (s.repair && !current) openConv(s.repair.convId);
   }
   async function refresh(fresh, accounts) {
-    try { paintStatus(await api('status?' + (fresh ? 'fresh=1&' : '') + (accounts ? 'accounts=1' : ''))); }
+    try { paintStatus(await api('status?' + (fresh ? 'fresh=1&' : '') + (accounts ? 'accounts=1' : ''))); if (!accounts && !running) loadEngines(); }
     catch { $('pillDot').className = 'dot bad'; $('pillText').textContent = 'Can\'t check'; }
   }
   async function loadIncidents() {
@@ -256,9 +267,10 @@ button:disabled { opacity: .5; cursor: default; }
       log.insertBefore(d, log.querySelector('.working')); return toBottom();
     }
     if (ev.type === 'signin') {
+      if (ev.state === 'expired') paintReconnect(ev);
       const d = document.createElement('div'); d.className = 'signin';
       const offer = ev.offer && NAMES[ev.offer] ? `<button class="act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button>` : '';
-      d.innerHTML = `<span>${esc(ev.text)}</span><div class="acts">${ev.open ? appLink(ev, ev.installed === false ? `Get the ${ev.app}` : `Open ${ev.app}`, 'act') : ''}${offer}</div>`;
+      d.innerHTML = `<span>${esc(ev.text)}</span><div class="acts">${ev.open && ev.state !== 'expired' ? appLink(ev, ev.installed === false ? `Get the ${ev.app}` : `Open ${ev.app}`, 'act') : ''}${offer}</div>`;
       log.insertBefore(d, log.querySelector('.working')); return toBottom();
     }
     if (ev.type === 'tool' || ev.type === 'status') {
@@ -293,13 +305,13 @@ button:disabled { opacity: .5; cursor: default; }
       const r = await api(`repair/${current}?since=${seq}`);
       for (const ev of r.events) { seq = ev.seq; paintEvent(ev); }
       if (r.running) { if (!running) setRunning(true); polling = setTimeout(poll, 1500); return; }
-      setRunning(false); refresh(true);
+      setRunning(false); refresh(false);
     } catch { polling = setTimeout(poll, 4000); }
   }
   function openConv(id) { clearTimeout(polling); current = id; seq = 0; log.innerHTML = ''; history.replaceState(history.state, '', '#r=' + id); poll(); }
   function newChat() {
     clearTimeout(polling); current = null; seq = 0; log.innerHTML = ''; $('welcome').hidden = false;
-    history.replaceState(history.state, '', location.pathname); setRunning(false); refresh(true);
+    history.replaceState(history.state, '', location.pathname); setRunning(false); refresh(false);
   }
   async function say(message) {
     message = String(message || '').trim(); if (!message || running) return;

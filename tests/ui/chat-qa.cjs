@@ -46,6 +46,39 @@ const B = process.argv[2], OUT = process.argv[3] || '.';
   const d = await br.newPage({ viewport: { width: 1280, height: 860 } });
   await d.goto(B + '/troubleshoot/'); await d.waitForSelector('.seg'); await d.waitForTimeout(800);
   await d.screenshot({ path: `${OUT}/desktop.png` });
+  // A status-only sign-in failure must stay actionable even with both normal-agent services down.
+  for (const [engine, label] of [['claude', 'Claude'], ['chatgpt', 'ChatGPT']]) for (const skin of ['dark', 'light']) {
+    const ctx = await br.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(skin => {
+      if (skin !== 'light') return;
+      document.addEventListener('DOMContentLoaded', () => {
+        const vars = { '--wz-bg': '#fff', '--wz-surface': '#f3f4f6', '--wz-surface-2': '#e5e7eb', '--wz-text': '#111827', '--wz-text-muted': '#4b5563', '--wz-border': '#d1d5db' };
+        for (const [k, v] of Object.entries(vars)) document.documentElement.style.setProperty(k, v);
+      });
+    }, skin);
+    await ctx.route('**/troubleshoot/api/status**', route => route.fulfill({ json: {
+      overall: 'down', actions: {}, checks: [
+        { id: 'agent-service', label: 'Agent Service', ok: false, detail: 'Not running.' },
+        { id: 'hermes', label: 'Your agent (Hermes)', ok: false, detail: 'Not running.' },
+        { id: 'agent-reply', label: 'Your agent can reply', ok: false, state: 'expired', provider: label, detail: `${label} sign-in expired.` }
+      ], reconnect: { engine, app: `${label} app`, appId: `wizard-${engine}`, installed: true, state: 'expired', open: `/wizard-${engine}/` }
+    } }));
+    await ctx.route(`**/wizard-${engine}/`, route => route.fulfill({ contentType: 'text/html', body: `<h1>${label} Connect</h1>` }));
+    const p = await ctx.newPage();
+    await p.goto(B + '/troubleshoot/'); await p.waitForSelector('#reconnect:not([hidden])');
+    ok(`${label}/${skin}: expired sign-in is in the status pill`, await p.locator('#pillText').textContent() === `${label} sign-in expired`);
+    const button = p.getByRole('link', { name: `Sign in to ${label} again`, exact: true });
+    ok(`${label}/${skin}: exactly one reconnect action`, await button.count() === 1);
+    const rect = await button.boundingBox();
+    ok(`${label}/${skin}: phone tap target is at least 44px tall`, rect.height >= 44);
+    ok(`${label}/${skin}: no horizontal overflow with the normal agent down`, await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await p.screenshot({ path: `${OUT}/phone-expired-${engine}-${skin}.png` });
+    await button.tap(); await p.waitForURL(`**/wizard-${engine}/`);
+    ok(`${label}/${skin}: one tap opens the existing connection app`, await p.locator('h1').textContent() === `${label} Connect`);
+    await p.goBack(); await p.waitForSelector('#reconnect:not([hidden])');
+    ok(`${label}/${skin}: Back returns to the repair chat`, p.url().includes('/troubleshoot/'));
+    await ctx.close();
+  }
   console.log(r.join('\n')); await br.close();
   if (r.some(x => x.startsWith('FAIL'))) process.exit(1);
 })().catch(e => { console.error(e); process.exit(1); });
