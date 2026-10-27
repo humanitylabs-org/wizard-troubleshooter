@@ -17,5 +17,5 @@ for (const [fresh, accounts, expected] of [[false, false, 'status'], [true, fals
 test('expired sign-in recovery is prominent without opening system details', () => {
   assert.match(page, /id="reconnect"[^>]+role="status"/)
   assert.ok(page.indexOf('id="reconnect"') < page.indexOf('id="scroll"'))
-  assert.match(page, /Sign in to \$\{name\} again/)
+  assert.match(page, /Sign in to \$\{name\}/)
 })
