@@ -5,18 +5,22 @@ your Wizard connection apps (Claude, ChatGPT or Tinfoil) fixes the server. It li
 private network and the HTTPS front door; the sign-in bridge, Wizard shell, Agent Service and Hermes can
 all be down and it still works.
 
-- **Rescue design**: the page looks like a rescue service arriving, not like another Wizard app. A **rescue card**
-  with a high-visibility battenburg band and a beacon (pulsing while it checks or repairs, still when all is well) says
-  the state in one plain sentence ("Everything is working" / "Wizard is down — here's what I'm doing"). Under it,
-  **What I checked** lists every check, problems first, and the conversation ticks off each **rescue step** the agent
-  runs. One big high-visibility action (**My Wizard is down**, **Fix it now** when a check fails), quick-tap messages,
-  and the details sheet (sign-ins, manual fixes, earlier repair chats) behind the status pill. Manual fixes confirm in a
-  sheet. It follows the shared app rules (wizard-os `style/APP-DESIGN-RULES.md`): the window is the page, layout by
-  window width with container queries (one column narrow, status beside the chat at 960px and up), no title in a
-  window, one pop-up (`.wz-sheet`: ×, Esc, outside, Back, swipe). It must work while the rest of Wizard is down, so
-  `web/index.html` is self-contained: its own colour tokens in one `:root` block (light and dark), the sheet behaviour
-  inlined, no shell kit, skin, fonts or external URLs. In a Wizard window it takes only the shell's light/dark choice
-  (Appearance v1).
+- **Calm, single-focus screen**: one quiet status line at the top (a still dot and one sentence: "Everything is
+  working" / "Something's wrong: <one thing>" / "Fixing…"; the dot breathes gently only while fixing, and not at all
+  with reduced motion), the conversation as the main area, and one primary action (**Fix it**) only when a check
+  fails. Each run of agent checks folds into one "N steps" line. Everything else (all checks, sign-ins, manual fixes,
+  recent rescues) sits behind **Details**, a sheet. The look borrows "The Monospace Web" (a printout on a character
+  grid) in plain CSS: monospace type, thin rules, one restrained amber accent. It follows the shared app rules
+  (wizard-os `style/APP-DESIGN-RULES.md`): the window is the page, layout by window width with container queries, no
+  title in a window, pop-ups are `.wz-sheet` (×, Esc, outside, Back, swipe). It must work while the rest of Wizard is
+  down, so `web/index.html` is self-contained: its own colour tokens in one `:root` block (light and dark), the sheet
+  behaviour inlined, no fonts or external URLs (the optional shell app client only adds skin roles for the diagnosed
+  sign-in path). In a Wizard window it takes the shell's light/dark choice (Appearance v1).
+- **Past sessions**: every repair conversation is already kept as one scrubbed JSON file in
+  `<state>/conversations/` (newest 100 kept; never the running one removed; no tokens or Claude session ids are
+  exposed). `GET /api/repairs?limit=1..50` lists them newest first (date, first line, origin); `GET /api/repair/<id>`
+  returns one thread. The page shows them in a quiet left column on wide windows and in a **Sessions** sheet on narrow
+  ones; a past session opens read-only (`#past=<id>`), **New session** starts a fresh one.
 - **Status**: plain-language checks of every link (Tailscale, HTTPS front door + certificate, sign-in check,
   app screens, Agent Service, Hermes, disk, memory). `node bin/status.mjs --accounts`.
 - **One-tap fixes**: a fixed list of restarts plus "Undo last Agent Service update". No free-form commands.
