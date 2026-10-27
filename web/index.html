@@ -3,136 +3,382 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
 <title>Fix Wizard</title>
+<script>
+/* Colour scheme. On its own the page follows the device (prefers-color-scheme). Inside a Wizard window it also takes the
+ * shell's light/dark choice through Appearance v1 (wizard:appearance), and nothing else: no skin, no shared kit, no
+ * shell files. The Troubleshooter has to look right when the rest of Wizard is down, so everything it needs is in this file. */
+(() => {
+  const root = document.documentElement, ORIGIN = location.origin;
+  let framed = false; try { framed = window.self !== window.top; } catch (_) { framed = true; }
+  if (!framed) return;
+  const set = s => { if (s === 'light' || s === 'dark') root.dataset.colorScheme = s; };
+  try { set(parent.document.documentElement.dataset.colorScheme); } catch (_) {}
+  addEventListener('message', e => {
+    const d = e.data; if (e.source !== parent || e.origin !== ORIGIN || !d || d.type !== 'wizard:appearance') return;
+    const a = d.appearance; if (!a || a.version !== 1) return;
+    set(a.colorScheme);
+    if (a.presentation === 'window' || a.presentation === 'immersive') root.dataset.presentation = a.presentation;
+    if (Number.isSafeInteger(a.revision)) { try { parent.postMessage({ type: 'wizard:appearance:ack', version: 1, revision: a.revision }, ORIGIN); } catch (_) {} }
+  });
+  try { parent.postMessage({ type: 'wizard:appearance:ready', version: 1, app: 'Troubleshooter' }, ORIGIN); } catch (_) {}
+})();
+</script>
 <style>
+/* Wizard Rescue. The Troubleshooter's own identity on the shared app rules (wizard-os style/APP-DESIGN-RULES.md):
+ * the window is the page, layout follows the window's width (container queries on .wz-app), no title in a window,
+ * one pop-up (.wz-sheet). It is self-contained on purpose, so these are its only colours: one block, light and dark. */
 :root {
-  --bg: var(--wz-bg, #0b0d12); --surface: var(--wz-surface, #151922); --surface2: var(--wz-surface-2, #1c2130);
-  --text: var(--wz-text, #e8eaf0); --muted: var(--wz-text-muted, #9aa3b5); --line: var(--wz-border, #262c3a);
-  --accent: var(--wz-accent, #e8eaf0); --ok: #4cc38a; --warn: #e5b454; --bad: #ef6b6b;
-  color-scheme: dark;
+  color-scheme: dark light;
+  --bg: light-dark(#eef2f6, #091018);
+  --surface: light-dark(#ffffff, #111b25);
+  --surface-2: light-dark(#e4eaf0, #182532);
+  --line: light-dark(#d3dce5, #233243);
+  --text: light-dark(#0b1520, #e8eff5);
+  --muted: light-dark(#536373, #93a4b4);
+  --ok: light-dark(#08804f, #3cd38a);
+  --warn: light-dark(#9a5b00, #f3b440);
+  --bad: light-dark(#c4262b, #ff5c5c);
+  --siren: light-dark(#1d64d8, #4a9bff);
+  --hivis: #ffd60a;
+  --hivis-ink: #0b1520;
+  --rescue-green: #0a7a48;
+  --kicker: light-dark(#0a7a48, #ffd60a);
+  --scrim: light-dark(rgb(9 16 24 / .38), rgb(0 0 0 / .62));
+  --shade: light-dark(rgb(9 16 24 / .08), rgb(0 0 0 / .35));
 }
+html[data-color-scheme="light"] { color-scheme: light; }
+html[data-color-scheme="dark"] { color-scheme: dark; }
+
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-body { display: flex; flex-direction: column; height: 100dvh; }
-body.hosted, html:has(> body.hosted) { background: transparent; }
-/* Inside a Wizard window the window's own title bar and Back handle navigation. */
-body.hosted a.back { display: none; }
-/* The window already says Troubleshooter: keep only the status, right-aligned. */
-body.hosted header h1 { visibility: hidden; }
-body.hosted header { padding-top: 4px; padding-bottom: 0; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+body { height: 100dvh; overflow: hidden; }
 button { font: inherit; color: inherit; }
-header { flex: none; display: flex; align-items: center; gap: 6px; padding: max(8px, env(safe-area-inset-top)) 12px 8px; }
-header h1 { font-size: 16px; font-weight: 600; margin: 0; flex: 1; }
-a.back { color: var(--text); text-decoration: none; font-size: 24px; line-height: 1; padding: 4px 8px 6px 2px; }
-.pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); background: none; border: 0; padding: 8px 4px 8px 8px; cursor: pointer; max-width: 60vw; }
-.pill span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
+[hidden] { display: none !important; }
+
+/* ---------- frame: the window is the page ---------- */
+.wz-app { --wz-gutter: 12px; --st: var(--siren); height: 100%; display: flex; flex-direction: column; container: wz-app / inline-size; }
+.wz-app[data-state="ok"] { --st: var(--ok); }
+.wz-app[data-state="degraded"] { --st: var(--warn); }
+.wz-app[data-state="down"], .wz-app[data-state="unknown"] { --st: var(--bad); }
+.wz-app[data-state="working"], .wz-app[data-state="checking"] { --st: var(--siren); }
+@container wz-app (min-width: 600px) { .stage { --wz-gutter: 20px; } }
+@container wz-app (min-width: 960px) { .stage { --wz-gutter: 28px; } }
+
+/* Only on the bare page: Back to Wizard. In a window the title bar names the app and handles Back. */
+.wz-head { flex: none; display: flex; align-items: center; gap: 4px; padding: max(6px, env(safe-area-inset-top)) 12px 0; }
+.wz-head a.back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 10px 0 2px; color: var(--muted); text-decoration: none; font-size: 15px; }
+.wz-head a.back b { font-size: 26px; font-weight: 400; line-height: 1; margin-top: -3px; }
+body.hosted .wz-head { display: none; }
+
+.stage { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.status-col > * { flex: none; }
+.status-col { flex: none; display: flex; flex-direction: column; gap: 14px; padding: 10px var(--wz-gutter) 4px; }
+.chat-col { flex: 1 0 auto; display: flex; flex-direction: column; min-width: 0; }
+#scroll { flex: 1 0 auto; padding: 0 var(--wz-gutter); }
+.wrap { min-height: 100%; display: flex; flex-direction: column; }
+.dock-wrap { position: sticky; bottom: 0; z-index: 2; padding: 8px var(--wz-gutter) max(12px, env(safe-area-inset-bottom)); background: var(--bg); box-shadow: 0 -10px 12px -10px var(--shade); }
+
+/* Wide windows: status on the left, the rescue conversation on the right, each scrolling on its own. */
+@container wz-app (min-width: 960px) {
+  .stage { display: grid; grid-template-columns: minmax(340px, 5fr) 7fr; grid-template-rows: minmax(0, 1fr) auto; grid-template-areas: "status chat" "status dock"; overflow: hidden; }
+  .status-col { grid-area: status; overflow-y: auto; padding: 18px 10px 20px var(--wz-gutter); }
+  .chat-col { grid-area: chat; min-height: 0; border-left: 1px solid var(--line); }
+  .dock-wrap { grid-area: dock; border-left: 1px solid var(--line); }
+  #scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 18px var(--wz-gutter) 0; }
+  .dock-wrap { position: static; background: none; box-shadow: none; }
+  .welcome { margin-bottom: auto; padding-bottom: 24px; }
+}
+
+/* ---------- the rescue card ---------- */
+.rescue { position: relative; overflow: hidden; border-radius: 20px; background: linear-gradient(180deg, color-mix(in srgb, var(--st) 13%, var(--surface)), var(--surface) 72%); border: 1px solid color-mix(in srgb, var(--st) 30%, var(--line)); box-shadow: 0 10px 30px -18px var(--shade); }
+/* High-visibility battenburg band, the way a rescue vehicle is marked. */
+.stripe { height: 12px; background:
+  repeating-linear-gradient(90deg, var(--hivis) 0 18px, var(--rescue-green) 18px 36px) top / 100% 50% no-repeat,
+  repeating-linear-gradient(90deg, var(--rescue-green) 0 18px, var(--hivis) 18px 36px) bottom / 100% 50% no-repeat; }
+.rescue-body { display: flex; gap: 16px; align-items: flex-start; padding: 18px 18px 8px; }
+.beacon { position: relative; flex: none; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; color: var(--hivis-ink);
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--st) 45%, var(--hivis)) 0, var(--st) 62%);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--st) 18%, transparent), 0 0 26px 2px color-mix(in srgb, var(--st) 55%, transparent); }
+.beacon svg { width: 28px; height: 28px; position: relative; z-index: 1; }
+.beacon svg path { fill: none; stroke: currentColor; stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; }
+.beacon .i { display: none; }
+.wz-app[data-state="ok"] .i-ok, .wz-app[data-state="degraded"] .i-warn,
+.wz-app[data-state="down"] .i-cross, .wz-app[data-state="unknown"] .i-cross, .wz-app[data-state="working"] .i-cross, .wz-app[data-state="checking"] .i-cross { display: block; }
+.beacon::before, .beacon::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--st); opacity: 0; }
+.wz-app:is([data-state="checking"], [data-state="working"], [data-state="down"], [data-state="unknown"]) .beacon::before { animation: ping 1.8s cubic-bezier(.2,.6,.3,1) infinite; }
+.wz-app:is([data-state="checking"], [data-state="working"], [data-state="down"], [data-state="unknown"]) .beacon::after { animation: ping 1.8s cubic-bezier(.2,.6,.3,1) .9s infinite; }
+.wz-app:is([data-state="working"], [data-state="down"]) .beacon { animation: flash 1.8s ease-in-out infinite; }
+@keyframes ping { 0% { transform: scale(.85); opacity: .75; } 100% { transform: scale(1.75); opacity: 0; } }
+@keyframes flash { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--st) 28%, transparent), 0 0 38px 8px color-mix(in srgb, var(--st) 70%, transparent); } }
+.rescue-text { min-width: 0; flex: 1; }
+.kicker { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--kicker); }
+.kicker svg { width: 13px; height: 13px; }
+.kicker svg path { fill: currentColor; }
+.headline { margin: 4px 0 6px; font-size: 24px; line-height: 1.18; font-weight: 750; letter-spacing: -.01em; text-wrap: balance; }
+.sub { margin: 0; color: var(--muted); font-size: 15px; overflow-wrap: anywhere; }
+.sub b { color: var(--text); font-weight: 650; }
+.rescue-foot { display: flex; align-items: center; gap: 8px; padding: 6px 12px 12px 86px; }
+/* Status pill: the whole row opens the details sheet. */
+.pill { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; max-width: 100%; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--surface) 70%, transparent); color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer; }
+.pill > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill .more { color: var(--muted); font-weight: 500; white-space: nowrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--muted); }
 .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
-#scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-.wrap { max-width: 680px; margin: 0 auto; padding: 8px 16px 16px; min-height: 100%; display: flex; flex-direction: column; }
-.welcome { margin-top: auto; padding: 0 0 8px; }
-.welcome .big { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
-.welcome .sub { color: var(--muted); font-size: 15px; }
-.welcome .alert { margin-top: 14px; font-size: 14px; display: flex; gap: 10px; color: var(--text); }
-.welcome .alert span:last-child { min-width: 0; overflow-wrap: anywhere; }
-.welcome .alert .dot { margin-top: 7px; }
-.chips { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; }
-.chip { text-align: left; background: var(--surface); border: 0; border-radius: 12px; padding: 12px 14px; cursor: pointer; }
-.chip.main { background: var(--text); color: var(--bg); font-weight: 600; }
-.log { display: flex; flex-direction: column; gap: 14px; }
+
+/* ---------- what I checked ---------- */
+.checks { border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.checks > summary { list-style: none; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 16px; cursor: pointer; font-size: 13px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.checks > summary::-webkit-details-marker { display: none; }
+.checks > summary .count { margin-left: auto; letter-spacing: 0; text-transform: none; font-weight: 600; }
+.checks > summary::after { content: "›"; font-size: 20px; line-height: 1; transform: rotate(90deg); transition: transform .15s; }
+.checks:not([open]) > summary::after { transform: rotate(0); }
+.wz-list { list-style: none; margin: 0; padding: 0; }
+.checklist { padding: 0 8px 8px; display: grid; grid-template-columns: 1fr; }
+@container wz-app (min-width: 600px) and (max-width: 959px) { .checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; } }
+.wz-row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 8px; border-top: 1px solid var(--line); font-size: 14px; }
+.checklist .wz-row { border-top: 0; border-radius: 10px; }
+#incidents { grid-template-columns: 1fr; }
+.mark { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 800; line-height: 1; color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
+.mark.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.mark.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 16%, transparent); }
+.checklist .wz-row.bad { background: color-mix(in srgb, var(--bad) 8%, transparent); }
+.wz-row .m { flex: 1; min-width: 0; }
+.wz-row .m > b { font-weight: 600; }
+.wz-row .d { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.checklist .wz-row:not(.bad) .d { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wz-row a { color: var(--text); font-size: 13px; white-space: nowrap; padding-top: 1px; }
+.wz-sec { display: flex; flex-direction: column; }
+.wz-sec-h { margin: 6px 4px 4px; font-size: 13px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.wz-sec .wz-list { border-radius: 16px; background: var(--surface); border: 1px solid var(--line); padding: 0 8px; }
+.wz-sec .wz-list > .wz-row:first-child { border-top: 0; }
+.small { font-size: 12px; color: var(--muted); }
+
+/* While a rescue conversation runs in a narrow or medium window, the card tightens so the chat has room. */
+@container wz-app (max-width: 959px) {
+  .wz-app.chatting .rescue-body { padding: 12px 14px 6px; gap: 12px; align-items: center; }
+  .wz-app.chatting .beacon { width: 42px; height: 42px; }
+  .wz-app.chatting .beacon svg { width: 22px; height: 22px; }
+  .wz-app.chatting .headline { font-size: 18px; margin: 2px 0; }
+  .wz-app.chatting .sub { font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .wz-app.chatting .rescue-foot { padding: 0 12px 10px 68px; }
+  .wz-app.chatting #incWrap { display: none !important; }
+}
+@container wz-app (min-width: 600px) {
+  .headline { font-size: 28px; }
+  .beacon { width: 66px; height: 66px; }
+  .rescue-body { padding: 22px 22px 8px; gap: 18px; }
+  .rescue-foot { padding-left: 106px; }
+}
+
+/* ---------- welcome + quick messages ---------- */
+.welcome { margin-top: auto; padding: 18px 0 6px; }
+.welcome .big { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
+.welcome .lede { color: var(--muted); font-size: 15px; }
+.chips { display: grid; gap: 8px; margin-top: 14px; grid-template-columns: 1fr; }
+@container wz-app (min-width: 600px) { .chips { grid-template-columns: 1fr 1fr; } .chips .chip.main { grid-column: 1 / -1; } }
+.chip { min-height: 48px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; cursor: pointer; font-size: 15px; }
+.chip:hover { border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
+/* The one big primary action: high-visibility, like the side of an ambulance. */
+.chip.main, .wz-button { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 56px; border: 0; border-radius: 16px; background: var(--hivis); color: var(--hivis-ink); font-size: 17px; font-weight: 800; letter-spacing: .01em; text-align: center; cursor: pointer;
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--hivis-ink) 18%, transparent), 0 8px 22px -12px color-mix(in srgb, var(--hivis) 80%, transparent); }
+.chip.main svg { width: 20px; height: 20px; }
+.chip.main svg path { fill: currentColor; }
+.wz-button { min-height: 48px; padding: 0 18px; font-size: 15px; }
+.wz-button.secondary { background: var(--surface-2); color: var(--text); box-shadow: none; font-weight: 600; }
+
+/* ---------- conversation ---------- */
+.log { display: flex; flex-direction: column; gap: 14px; padding-top: 16px; padding-bottom: 6px; }
 .log:empty { display: none; }
 .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
-.msg.owner { align-self: flex-end; max-width: 85%; background: var(--surface2); padding: 9px 13px; border-radius: 16px 16px 4px 16px; }
-.msg.agent { align-self: stretch; }
-.msg.agent code { background: var(--surface); padding: 1px 5px; border-radius: 5px; font-size: 14px; }
-.msg .who { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.msg.owner { align-self: flex-end; max-width: 85%; background: var(--surface-2); padding: 10px 14px; border-radius: 18px 18px 4px 18px; }
+.msg.agent { align-self: stretch; max-width: 72ch; padding-left: 14px; border-left: 3px solid var(--rescue-green); }
+.msg.agent code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; font-size: 14px; }
+.msg .who { font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--kicker); margin-bottom: 2px; }
 .signin, .note { font-size: 14px; color: var(--muted); }
-.signin { display: flex; flex-direction: column; gap: 8px; color: var(--text); }
+.signin { display: flex; flex-direction: column; gap: 10px; color: var(--text); padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
 .signin .acts { display: flex; gap: 8px; flex-wrap: wrap; }
-.act { min-height: 40px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 10px; border: 0; background: var(--surface2); color: var(--text); text-decoration: none; cursor: pointer; font-size: 14px; }
-.working { font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.approval { border: 2px solid var(--hivis); }
+.approval .approval-state { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--kicker); }
+.approval pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; font-size: 13px; background: var(--surface-2); border-radius: 10px; padding: 10px; }
+.act { min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 12px; border: 0; background: var(--surface-2); color: var(--text); text-decoration: none; cursor: pointer; font-size: 14px; font-weight: 600; }
+/* Rescue steps: every check and fix the agent runs, ticked off as it goes. */
+.steps { list-style: none; margin: 0; padding: 12px 14px 12px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.steps::before { content: "Rescue steps"; font-size: 12px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px 2px; }
+.steps li { position: relative; display: flex; gap: 10px; align-items: flex-start; font-size: 14px; padding: 4px 0; overflow-wrap: anywhere; }
+.steps li::before { content: "✓"; flex: none; width: 22px; height: 22px; margin-top: -1px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
+.steps li.now { font-weight: 600; }
+.steps li.now::before { content: ""; background: var(--siren); box-shadow: 0 0 0 4px color-mix(in srgb, var(--siren) 22%, transparent); width: 12px; height: 12px; margin: 5px 5px 0; animation: blink 1.1s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .35; } }
+.working { font-size: 14px; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+.log:has(.steps li.now) > .working { display: none; }
 .working .step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.spin { width: 13px; height: 13px; flex: none; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: s .9s linear infinite; }
+.spin { width: 14px; height: 14px; flex: none; border: 2px solid var(--siren); border-top-color: transparent; border-radius: 50%; animation: s .9s linear infinite; }
 @keyframes s { to { transform: rotate(360deg); } }
-.after { display: flex; gap: 6px; flex-wrap: wrap; }
-.after .chip { padding: 8px 12px; font-size: 14px; }
-footer { flex: none; padding: 4px 16px max(12px, env(safe-area-inset-bottom)); }
-.dock { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
-/* Model picker: one tap, right above the message box. */
-.picker { display: flex; gap: 2px; padding: 3px; background: var(--surface); border-radius: 12px; }
-.seg { flex: 1 1 0; min-width: 0; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 4px 4px; border: 0; border-radius: 9px; background: none; color: var(--muted); cursor: pointer; line-height: 1.2; }
-.seg b { font-size: 14px; font-weight: 600; }
-.seg small { font-size: 11px; opacity: .8; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.seg[aria-checked="true"] { background: var(--surface2); color: var(--text); }
+.after { display: flex; gap: 8px; flex-wrap: wrap; }
+.after .chip { min-height: 44px; padding: 8px 14px; font-size: 14px; }
+
+/* ---------- dock: model picker right above the message box ---------- */
+.dock { display: flex; flex-direction: column; gap: 8px; }
+.picker { display: flex; gap: 2px; padding: 3px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.seg { flex: 1 1 0; min-width: 0; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 4px; border: 0; border-radius: 11px; background: none; color: var(--muted); cursor: pointer; line-height: 1.2; }
+.seg b { font-size: 14px; font-weight: 650; }
+.seg small { font-size: 11px; opacity: .85; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seg[aria-checked="true"] { background: var(--surface-2); color: var(--text); box-shadow: inset 0 -2px 0 var(--rescue-green); }
 .seg.off { opacity: .6; }
 .seg.off b { font-weight: 500; }
 .seg.off[aria-checked="true"] { opacity: .75; }
 .composer { display: flex; gap: 8px; align-items: flex-end; }
-textarea { flex: 1; min-height: 44px; max-height: 160px; resize: none; font: inherit; color: var(--text); background: var(--surface); border: 0; border-radius: 22px; padding: 10px 16px; outline: none; }
-textarea:focus { box-shadow: 0 0 0 1px var(--line); }
-button.send { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--text); color: var(--bg); font-size: 19px; font-weight: 700; cursor: pointer; }
-button.send.stop { background: var(--surface2); color: var(--text); font-size: 14px; }
+textarea { flex: 1; min-height: 48px; max-height: 160px; resize: none; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 24px; padding: 11px 18px; outline: none; }
+textarea::placeholder { color: var(--muted); }
+textarea:focus { border-color: color-mix(in srgb, var(--siren) 60%, var(--line)); }
+button.send { flex: none; width: 48px; height: 48px; border-radius: 50%; border: 0; background: var(--text); color: var(--bg); font-size: 20px; font-weight: 700; cursor: pointer; }
+button.send.stop { background: var(--bad); color: var(--hivis-ink); font-size: 15px; }
 button:disabled { opacity: .5; cursor: default; }
-/* Details sheet: technical things, out of the way. Flat sections, no boxes. */
-.sheet { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 10; }
-.sheet.open { display: block; }
-.sheet .panel { position: absolute; left: 0; right: 0; bottom: 0; max-height: 82dvh; overflow-y: auto; background: var(--bg); border-radius: 16px 16px 0 0; padding: 6px 16px 0; max-width: 680px; margin: 0 auto; }
-.sheet h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 18px 0 2px; }
-.row { display: flex; gap: 10px; padding: 7px 0; align-items: flex-start; font-size: 14px; }
-.row .dot { margin-top: 7px; } .row .m { flex: 1; min-width: 0; }
-.row .d { color: var(--muted); overflow-wrap: anywhere; }
-.row a { color: var(--text); font-size: 13px; white-space: nowrap; padding-top: 1px; }
-.fixes { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
-.past { display: block; width: 100%; text-align: left; font-size: 14px; background: none; border: 0; padding: 7px 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.small { font-size: 12px; color: var(--muted); }
-.sheet .bottom { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--bg) 14px); padding: 22px 0 max(12px, env(safe-area-inset-bottom)); margin-top: 6px; }
-.sheet .bottom .act { width: 100%; justify-content: center; }
-[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--siren); outline-offset: 2px; }
+
+/* ---------- the one pop-up: bottom sheet when narrow, centred card when wide ---------- */
+.wz-sheet { color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 20px; padding: 18px; width: min(520px, calc(100% - 24px)); max-width: none; max-height: 85%; overflow: auto; box-shadow: 0 24px 60px -20px var(--shade); }
+.wz-sheet::backdrop { background: var(--scrim); }
+.wz-sheet-x { position: sticky; top: 0; float: right; width: 40px; height: 40px; margin: -6px -6px 0 8px; border: 0; border-radius: 50%; display: grid; place-items: center; color: var(--text); background: var(--surface-2); font-size: 20px; line-height: 1; cursor: pointer; z-index: 1; }
+.wz-sheet-grip { display: none; }
+.wz-sheet > h2 { margin: 0 0 4px; font-size: 18px; font-weight: 750; }
+.wz-sheet .stripe { margin: 12px -18px 4px; height: 6px; }
+.wz-sheet .wz-sec { margin-top: 14px; }
+.wz-sheet p { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+.fixes { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 0 4px; }
+.fix-note { font-size: 14px; color: var(--text); padding: 8px 2px 0; overflow-wrap: anywhere; }
+.past { display: block; width: 100%; min-height: 44px; text-align: left; font-size: 14px; background: none; border: 0; border-top: 1px solid var(--line); padding: 9px 4px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.past:first-child { border-top: 0; }
+.wz-actions { clear: both; display: flex; flex-wrap: wrap; gap: 8px; padding-top: 16px; }
+.wz-actions > * { flex: 1 1 140px; }
+#confirm .wz-actions { flex-direction: column-reverse; }
+#confirm .wz-actions > * { flex: none; width: 100%; }
+@media (max-width: 599px) {
+  .wz-sheet { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 22px 22px 0 0; border-bottom: 0; max-height: 88%; padding: 6px 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .wz-sheet[open] { animation: wz-sheet-up 220ms ease-out; }
+  .wz-sheet-grip { display: block; width: 40px; height: 5px; margin: 4px auto 10px; border-radius: 3px; background: var(--line); touch-action: none; }
+  .wz-sheet .stripe { margin: 12px -16px 4px; }
+}
+@keyframes wz-sheet-up { from { transform: translateY(40px); opacity: .6; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .spin { border-top-color: var(--siren); }
+}
 </style>
 </head>
 <body>
-<header>
-  <a class="back" id="back" href="/wizard-os-home/" aria-label="Back to Wizard">‹</a>
-  <h1>Fix Wizard</h1>
-  <button class="pill" id="pill" type="button" aria-label="Show system details"><span class="dot" id="pillDot"></span><span id="pillText">Checking…</span></button>
+<div class="wz-app" id="app" data-state="checking">
+<header class="wz-head">
+  <a class="back" id="back" href="/wizard-os-home/" aria-label="Back to Wizard"><b>‹</b> Wizard</a>
 </header>
 
-<div id="scroll"><div class="wrap">
-  <section class="welcome" id="welcome">
-    <div class="big">What's wrong?</div>
-    <div class="sub">Tell me and I'll fix it, even when Wizard's normal chat is down.</div>
-    <div class="alert" id="alert" hidden><span class="dot bad"></span><span id="alertText"></span></div>
-    <div class="chips" id="chips">
-      <button class="chip main" type="button" data-say="My Wizard is down, please fix it.">My Wizard is down</button>
-      <button class="chip" type="button" data-say="My messages won't send in Wizard. Please fix it.">Messages won't send</button>
-      <button class="chip" type="button" data-say="My agent isn't replying in Wizard. Please fix it.">My agent isn't replying</button>
-      <button class="chip" type="button" data-say="Wizard is really slow. Please find out why and fix it.">Wizard is slow</button>
-    </div>
+<div class="stage" id="stage">
+  <aside class="status-col" aria-label="Status">
+    <section class="rescue" id="rescue" aria-live="polite">
+      <div class="stripe" aria-hidden="true"></div>
+      <div class="rescue-body">
+        <div class="beacon" aria-hidden="true">
+          <svg class="i i-ok" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+          <svg class="i i-warn" viewBox="0 0 24 24"><path d="M12 5v9M12 19v.01"/></svg>
+          <svg class="i i-cross" viewBox="0 0 24 24"><path d="M12 4.5v15M4.5 12h15"/></svg>
+        </div>
+        <div class="rescue-text">
+          <div class="kicker"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 1h4v5h5v4h-5v5H6v-5H1V6h5z"/></svg><span id="kicker">Wizard Rescue</span></div>
+          <h1 class="headline" id="headline">Checking your Wizard…</h1>
+          <p class="sub" id="sub">Going through every link between you and your agent.</p>
+        </div>
+      </div>
+      <div class="rescue-foot">
+        <button class="pill" id="pill" type="button" aria-label="Show system details"><span class="dot" id="pillDot"></span><span id="pillText">Checking…</span><span class="more">Details ›</span></button>
+      </div>
+    </section>
+
+    <details class="checks" id="checksBox" open>
+      <summary>What I checked <span class="count" id="checksCount"></span></summary>
+      <ul class="wz-list checklist" id="checks"></ul>
+    </details>
+
+    <details class="checks" id="incWrap" hidden>
+      <summary>Recent rescues <span class="count" id="incCount"></span></summary>
+      <ul class="wz-list checklist" id="incidents"></ul>
+    </details>
+  </aside>
+
+  <section class="chat-col" aria-label="Repair chat">
+    <div id="scroll"><div class="wrap">
+      <section class="welcome" id="welcome">
+        <div class="big">What's wrong?</div>
+        <div class="lede">Tell me and I'll fix it, even when Wizard's normal chat is down.</div>
+        <div class="chips" id="chips">
+          <button class="chip main" type="button" data-say="My Wizard is down, please fix it."><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 1h4v5h5v4h-5v5H6v-5H1V6h5z"/></svg><span id="mainLabel">My Wizard is down</span></button>
+          <button class="chip" type="button" data-say="My messages won't send in Wizard. Please fix it.">Messages won't send</button>
+          <button class="chip" type="button" data-say="My agent isn't replying in Wizard. Please fix it.">My agent isn't replying</button>
+          <button class="chip" type="button" data-say="Wizard is really slow. Please find out why and fix it.">Wizard is slow</button>
+        </div>
+      </section>
+      <div class="log" id="log"></div>
+    </div></div>
   </section>
-  <div class="log" id="log"></div>
-</div></div>
 
-<footer><div class="dock">
-  <div class="picker" id="picker" role="radiogroup" aria-label="Who answers"></div>
-  <div class="composer">
-    <textarea id="input" rows="1" placeholder="Describe the problem…" aria-label="Message"></textarea>
-    <button class="send" id="send" type="button" aria-label="Send">↑</button>
-  </div>
-</div></footer>
+  <footer class="dock-wrap"><div class="dock">
+    <div class="picker" id="picker" role="radiogroup" aria-label="Who answers"></div>
+    <div class="composer">
+      <textarea id="input" rows="1" placeholder="Describe the problem…" aria-label="Message"></textarea>
+      <button class="send" id="send" type="button" aria-label="Send">↑</button>
+    </div>
+  </div></footer>
+</div>
+</div>
 
-<div class="sheet" id="sheet"><div class="panel">
-  <h2>Connection to your agent</h2>
-  <div id="checks"></div>
-  <h2>Sign-ins</h2>
-  <div id="acct"></div>
-  <h2>Manual fixes</h2>
-  <div class="fixes" id="fixes"></div>
-  <div id="pastWrap" hidden><h2>Earlier repair chats</h2><div id="past"></div></div>
-  <div id="incWrap" hidden><h2>Recently</h2><div id="incidents"></div></div>
-  <div class="bottom"><button class="act" id="closeSheet" type="button">Done</button></div>
-</div></div>
+<dialog class="wz-sheet" id="sheet" aria-labelledby="sheetTitle">
+  <h2 id="sheetTitle">Details</h2>
+  <div class="small">Sign-ins, manual fixes and earlier rescues.</div>
+  <div class="stripe" aria-hidden="true"></div>
+  <section class="wz-sec"><h3 class="wz-sec-h">Sign-ins</h3><div class="wz-list" id="acct"></div></section>
+  <section class="wz-sec"><h3 class="wz-sec-h">Manual fixes</h3><div class="fixes" id="fixes"></div><div class="fix-note" id="fixNote" role="status" hidden></div></section>
+  <section class="wz-sec" id="pastWrap" hidden><h3 class="wz-sec-h">Earlier repair chats</h3><div class="wz-list" id="past"></div></section>
+  <div class="wz-actions"><button class="wz-button secondary" id="closeSheet" type="button">Done</button></div>
+</dialog>
 
+<dialog class="wz-sheet" id="confirm" aria-labelledby="cfTitle">
+  <h2 id="cfTitle"></h2>
+  <p id="cfWarn"></p>
+  <div class="wz-actions"><button class="wz-button secondary" id="cfNo" type="button">Cancel</button><button class="wz-button" id="cfYes" type="button"></button></div>
+</dialog>
+
+<script>
+/* The one pop-up (wizard-os style/sheet.js, inlined so it works with the rest of Wizard down).
+ * Adds the grip and × if missing, and closes five ways: ×, Esc (native), tap outside, Back
+ * (window.__wizardCloseOverlay, which the shell calls) and a downward swipe on the grip. */
+(() => {
+  'use strict';
+  const open = [];
+  function wire(d) {
+    if (d.__wz) return d; d.__wz = true;
+    if (!d.querySelector(':scope > .wz-sheet-grip')) d.insertAdjacentHTML('afterbegin', '<div class="wz-sheet-grip" aria-hidden="true"></div>');
+    if (!d.querySelector(':scope > .wz-sheet-x')) d.querySelector(':scope > .wz-sheet-grip').insertAdjacentHTML('afterend', '<button type="button" class="wz-sheet-x" aria-label="Close">×</button>');
+    d.addEventListener('click', e => {
+      if (e.target.closest('.wz-sheet-x')) return close(d);
+      if (e.target === d) { const r = d.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) close(d); }
+    });
+    d.addEventListener('close', () => { const i = open.indexOf(d); if (i >= 0) open.splice(i, 1); });
+    let y0 = null; const g = d.querySelector('.wz-sheet-grip');
+    g.addEventListener('pointerdown', e => { y0 = e.clientY; g.setPointerCapture(e.pointerId); });
+    g.addEventListener('pointermove', e => { if (y0 != null) d.style.transform = `translateY(${Math.max(0, e.clientY - y0)}px)`; });
+    const end = e => { if (y0 == null) return; const dy = e.clientY - y0; y0 = null; d.style.transform = ''; if (dy > 70) close(d); };
+    g.addEventListener('pointerup', end); g.addEventListener('pointercancel', end);
+    return d;
+  }
+  function show(d) { wire(d); if (!d.open) d.showModal(); if (!open.includes(d)) open.push(d); return d; }
+  function close(d) { if (d && d.open) d.close(); }
+  const prev = window.__wizardCloseOverlay;
+  window.__wizardCloseOverlay = () => { const d = open.pop(); if (d) { close(d); return true; } return typeof prev === 'function' ? !!prev() : false; };
+  window.WzSheet = { open: show, close, wire };
+})();
+</script>
 <script>
 (() => {
   const $ = id => document.getElementById(id);
@@ -140,6 +386,7 @@ button:disabled { opacity: .5; cursor: default; }
   const md = s => esc(s).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
   const H = { 'Content-Type': 'application/json', 'X-Wizard-Troubleshoot': '1' };
   const NAMES = { claude: 'Claude', chatgpt: 'ChatGPT', tinfoil: 'Tinfoil' };
+  const app = $('app');
   // A connection app's page: same origin (/wizard-claude/), its own HTTPS port, or its App Store page when missing.
   // Another origin opens in a new tab: the shell can't host it in its own window.
   const appLink = (a, label, cls) => {
@@ -148,6 +395,17 @@ button:disabled { opacity: .5; cursor: default; }
   };
   const CACHE = 'wizard-troubleshoot-engines'; // last known picker, painted instantly; the server holds the real choice
   if (window.self !== window.top) document.body.classList.add('hosted');
+  const wide = () => app.getBoundingClientRect().width >= 960;
+  // Narrow windows keep the first screen short: the checklist opens by itself only when something is wrong,
+  // earlier rescues stay folded. Wide windows have room for both. A fold the owner touched stays as they left it.
+  const touched = new Set();
+  for (const id of ['checksBox', 'incWrap']) $(id).querySelector('summary').addEventListener('click', () => touched.add(id));
+  function autoFold() {
+    const w = wide(), chatting = app.classList.contains('chatting');
+    if (!touched.has('checksBox')) $('checksBox').open = w || (!chatting && !!lastStatus && lastStatus.overall !== 'ok');
+    if (!touched.has('incWrap')) $('incWrap').open = w;
+  }
+  try { new ResizeObserver(() => autoFold()).observe(app); } catch (_) {}
 
   // Model picker: every provider, its real model in quieter text, the owner's choice saved on the server.
   let engines = [], selected = null;
@@ -172,18 +430,19 @@ button:disabled { opacity: .5; cursor: default; }
   });
   async function loadEngines() { try { const r = await api('engines'); setEngines(r.engines, r.selected); } catch {} }
 
-  // Back: one step at a time. Details sheet → chat → Wizard.
-  const sheetOpen = () => $('sheet').classList.contains('open');
+  // Back: one step at a time. Details sheet → chat → Wizard. Pop-ups are .wz-sheet dialogs (WzSheet).
+  const sheetOpen = () => $('sheet').open;
   $('back').addEventListener('click', e => {
     if (sheetOpen()) { e.preventDefault(); closeSheet(); return; }
     if (document.referrer && new URL(document.referrer).origin === location.origin && history.length > 1) { e.preventDefault(); history.back(); }
   });
-  function openSheet() { $('sheet').classList.add('open'); history.pushState({ sheet: 1 }, '', location.href); refresh(true, true); loadPast(); loadIncidents(); }
-  function closeSheet() { if (!sheetOpen()) return; $('sheet').classList.remove('open'); if (history.state?.sheet) history.back(); }
-  addEventListener('popstate', () => $('sheet').classList.remove('open'));
+  function openSheet() { if (sheetOpen()) return; WzSheet.open($('sheet')); history.pushState({ sheet: 1 }, '', location.href); refresh(true, true); loadPast(); loadIncidents(); }
+  function closeSheet() { WzSheet.close($('sheet')); }
+  // However it closed (×, Esc, outside, swipe, the shell's Back), drop the history entry it added.
+  $('sheet').addEventListener('close', () => { if (history.state?.sheet) history.back(); });
+  addEventListener('popstate', () => { WzSheet.close($('confirm')); WzSheet.close($('sheet')); });
   $('pill').addEventListener('click', openSheet);
   $('closeSheet').addEventListener('click', closeSheet);
-  $('sheet').addEventListener('click', e => { if (e.target === $('sheet')) closeSheet(); });
 
   async function api(path, opts = {}) {
     const r = await fetch('/troubleshoot/api/' + path, { cache: 'no-store', credentials: 'same-origin', ...opts });
@@ -192,27 +451,52 @@ button:disabled { opacity: .5; cursor: default; }
     return j;
   }
   const when = iso => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const lower = s => String(s || '').replace(/^Your /, 'your ');
 
-  // Status: one pill in the header, details on tap.
-  let actions = {}, lastStatus = null;
+  // The rescue card: one plain sentence about the state of Wizard, and what happens next.
+  let actions = {}, lastStatus = null, statusFailed = false, lastStep = '';
+  function paintCard() {
+    const s = lastStatus, bad = s ? s.checks.filter(c => !c.ok) : [];
+    let state = !s ? (statusFailed ? 'unknown' : 'checking') : s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'degraded' : 'down';
+    let kicker = 'Wizard Rescue', head, sub;
+    if (running) {
+      state = 'working'; kicker = 'Rescue in progress';
+      head = 'On it. Fixing Wizard now';
+      sub = lastStep ? esc(lastStep) : 'Looking into it…';
+    } else if (state === 'checking') { head = 'Checking your Wizard…'; sub = 'Going through every link between you and your agent.'; }
+    else if (state === 'unknown') { head = 'I can’t run my checks'; sub = 'Rescue is here but can’t reach its own checks right now. You can still tell me what’s wrong below.'; }
+    else if (state === 'ok') { head = 'Everything is working'; sub = `All ${s.checks.length} checks passed. If something still feels wrong, tell me below.`; }
+    else {
+      const first = bad[0];
+      head = state === 'down' ? 'Wizard is down — here’s what I’m doing' : 'Something needs attention';
+      sub = `I found a problem with <b>${esc(lower(first.label))}</b>: ${esc(String(first.detail || '').replace(/\.$/, '').toLowerCase())}.${bad.length > 1 ? ` ${bad.length - 1} more below.` : ''} Tap <b>Fix it now</b> and I’ll repair it step by step.`;
+    }
+    app.dataset.state = state;
+    $('kicker').textContent = kicker; $('headline').textContent = head; $('sub').innerHTML = sub;
+    $('mainLabel').textContent = state === 'down' || state === 'degraded' ? 'Fix it now' : 'My Wizard is down';
+  }
+
+  // Status: the card and the checklist on the page, sign-ins and manual fixes in the details sheet.
   function paintStatus(s) {
-    lastStatus = s; actions = s.actions || actions;
+    lastStatus = s; statusFailed = false; actions = s.actions || actions;
     const bad = s.checks.filter(c => !c.ok);
     $('pillDot').className = 'dot ' + (s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'warn' : 'bad');
     $('pillText').textContent = s.overall === 'ok' ? 'All working' : bad.length === 1 ? bad[0].label + ': problem' : bad.length + ' problems';
-    $('alert').hidden = s.overall === 'ok';
-    if (bad.length) $('alertText').textContent = `I can already see a problem with ${bad[0].label.replace(/^Your /, 'your ')}: ${bad[0].detail.replace(/\.$/, '').toLowerCase()}. Tap below and I'll fix it.`;
-    $('checks').innerHTML = s.checks.map(c => `<div class="row"><span class="dot ${c.ok ? (c.slow ? 'warn' : 'ok') : 'bad'}"></span><div class="m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="d">${esc(c.detail)}</div>`}</div></div>`).join('');
+    $('checksCount').textContent = `${s.checks.length - bad.length} of ${s.checks.length} OK`;
+    // Problems first, then the rest in their usual order.
+    const order = [...s.checks].sort((a, b) => (a.ok ? 1 : 0) - (b.ok ? 1 : 0));
+    $('checks').innerHTML = order.map(c => { const k = c.ok ? (c.slow ? 'warn' : 'ok') : 'bad'; return `<li class="wz-row ${k}"><span class="mark ${k}" aria-hidden="true">${k === 'ok' ? '✓' : k === 'warn' ? '!' : '×'}</span><div class="m"><b>${esc(c.label)}</b><div class="d">${esc(c.detail)}</div></div></li>`; }).join('');
     $('fixes').innerHTML = Object.entries(actions).map(([k, a]) => `<button class="act" type="button" data-act="${esc(k)}">${esc(a.label)}</button>`).join('');
     if (s.accounts) {
       setEngines(s.accounts, s.engine);
-      $('acct').innerHTML = s.accounts.map(a => `<div class="row"><span class="dot ${a.ok ? 'ok' : 'bad'}"></span><div class="m">${esc(a.app)}<div class="d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok || !a.open ? '' : appLink(a, a.installed === false ? 'Get app' : 'Sign in', '')}</div>`).join('');
+      $('acct').innerHTML = s.accounts.map(a => `<div class="wz-row"><span class="mark ${a.ok ? 'ok' : 'bad'}" aria-hidden="true">${a.ok ? '✓' : '×'}</span><div class="m"><b>${esc(a.app)}</b><div class="d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok || !a.open ? '' : appLink(a, a.installed === false ? 'Get app' : 'Sign in', '')}</div>`).join('');
     }
+    paintCard(); autoFold();
     if (s.repair && !current) openConv(s.repair.convId);
   }
   async function refresh(fresh, accounts) {
     try { paintStatus(await api('status?' + (fresh ? 'fresh=1&' : '') + (accounts ? 'accounts=1' : ''))); }
-    catch { $('pillDot').className = 'dot bad'; $('pillText').textContent = 'Can\'t check'; }
+    catch { $('pillDot').className = 'dot bad'; $('pillText').textContent = 'Can\'t check'; if (!lastStatus) { statusFailed = true; paintCard(); } }
   }
   async function loadIncidents() {
     try {
@@ -221,38 +505,73 @@ button:disabled { opacity: .5; cursor: default; }
       const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result'].includes(i.kind) && (i.text || i.detail))
         .filter(i => { const k = (i.text || i.detail) + when(i.at); return !seen.has(k) && seen.add(k); }).slice(0, 8);
       $('incWrap').hidden = !shown.length;
-      if (shown.length) $('incidents').innerHTML = shown.map(i => `<div class="row"><span class="dot ${i.ok === false || i.kind === 'outage' ? 'bad' : 'ok'}"></span><div class="m"><div class="d">${esc(i.text || i.detail)}</div><div class="small">${esc(when(i.at))}</div></div></div>`).join('');
+      $('incCount').textContent = shown.length;
+      if (shown.length) $('incidents').innerHTML = shown.map(i => { const k = i.ok === false || i.kind === 'outage' ? 'bad' : 'ok'; return `<li class="wz-row"><span class="mark ${k}" aria-hidden="true">${k === 'ok' ? '✓' : '×'}</span><div class="m"><div>${esc(i.text || i.detail)}</div><div class="small">${esc(when(i.at))}</div></div></li>`; }).join('');
     } catch {}
+  }
+  // Manual fixes ask first, in a sheet, and report back in the details sheet.
+  function ask(a) {
+    return new Promise(resolve => {
+      const d = $('confirm'); let done = false;
+      const fin = v => { if (done) return; done = true; resolve(v); WzSheet.close(d); };
+      $('cfTitle').textContent = `${a.label}?`;
+      $('cfWarn').textContent = a.warn || ''; $('cfWarn').hidden = !a.warn;
+      $('cfYes').textContent = a.label || 'Do it';
+      $('cfYes').onclick = () => fin(true); $('cfNo').onclick = () => fin(false);
+      d.addEventListener('close', () => fin(false), { once: true });
+      WzSheet.open(d);
+    });
   }
   $('fixes').addEventListener('click', async e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const a = actions[b.dataset.act] || {};
-    if (!confirm(`${a.label}?${a.warn ? '\n\n' + a.warn : ''}`)) return;
+    if (!await ask(a)) return;
+    const note = $('fixNote');
     b.disabled = true; const old = b.textContent; b.textContent = 'Working…';
-    try { const r = await api('action', { method: 'POST', headers: H, body: JSON.stringify({ action: b.dataset.act }) }); paintStatus(r.status); alert(r.detail); }
-    catch (err) { alert(err.message); }
-    finally { b.disabled = false; b.textContent = old; loadIncidents(); }
+    try { const r = await api('action', { method: 'POST', headers: H, body: JSON.stringify({ action: b.dataset.act }) }); paintStatus(r.status); note.textContent = r.detail; }
+    catch (err) { note.textContent = err.message; }
+    finally { note.hidden = !note.textContent; b.disabled = false; b.textContent = old; loadIncidents(); }
   });
 
   // Chat.
   let current = null, seq = 0, polling = 0, running = false;
-  const log = $('log'), scroller = $('scroll');
-  const toBottom = () => requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
+  const log = $('log'), scroller = $('scroll'), stage = $('stage');
+  const toBottom = () => requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; if (!wide()) stage.scrollTop = stage.scrollHeight; });
   function workingRow() {
     let w = log.querySelector('.working');
     if (!w) { w = document.createElement('div'); w.className = 'working'; w.innerHTML = '<span class="spin"></span><span class="step">Looking into it…</span>'; }
     log.appendChild(w); return w;
   }
-  function paintEvent(ev) {
+  // Rescue steps: every check or fix the agent runs becomes a line that is ticked off when the next one starts.
+  function closeSteps() { log.querySelectorAll('ol.steps.open').forEach(s => { s.classList.remove('open'); s.querySelectorAll('li.now').forEach(li => { li.className = ''; }); }); }
+  function addStep(text) {
+    let s = log.querySelector('ol.steps.open');
+    if (!s) { s = document.createElement('ol'); s.className = 'steps open'; log.insertBefore(s, log.querySelector('.working')); }
+    s.querySelectorAll('li.now').forEach(li => { li.className = ''; });
+    const li = document.createElement('li'); li.textContent = text; if (running) li.className = 'now'; s.appendChild(li);
+  }
+  function startChat() {
     $('welcome').hidden = true;
+    if (!app.classList.contains('chatting')) { app.classList.add('chatting'); touched.delete('checksBox'); autoFold(); }
+  }
+  function paintEvent(ev) {
+    startChat();
     if (ev.type === 'approval-result') {
       const row = log.querySelector(`[data-approval-row="${ev.approvalId}"]`);
       if (row) { row.querySelectorAll('button').forEach(b => b.disabled = true); row.querySelector('.approval-state').textContent = ev.approved ? 'Approved' : 'Denied or expired'; }
       return;
     }
+    if (ev.type === 'tool' || ev.type === 'status') {
+      const text = ev.type === 'tool' ? 'Checking: ' + ev.text.replace(/^(Bash|Shell): /, '') : ev.text;
+      lastStep = text; addStep(text);
+      if (running) { workingRow().querySelector('.step').textContent = text; paintCard(); }
+      return toBottom();
+    }
+    if (!['approval', 'signin', 'text', 'note'].includes(ev.type)) return;
+    closeSteps(); // a message ends the current run of steps; the next check starts a new list under it
     if (ev.type === 'approval') {
-      const d = document.createElement('div'); d.className = 'signin'; d.dataset.approvalRow = ev.approvalId;
-      d.innerHTML = `<strong class="approval-state">Owner approval required</strong><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto">${esc(ev.text)}</pre><div class="acts"><button class="act" data-approval="${esc(ev.approvalId)}" data-approved="true">Approve this exact action</button><button class="act" data-approval="${esc(ev.approvalId)}" data-approved="false">Deny</button></div>`;
+      const d = document.createElement('div'); d.className = 'signin approval'; d.dataset.approvalRow = ev.approvalId;
+      d.innerHTML = `<strong class="approval-state">Owner approval required</strong><pre>${esc(ev.text)}</pre><div class="acts"><button class="act" data-approval="${esc(ev.approvalId)}" data-approved="true">Approve this exact action</button><button class="act" data-approval="${esc(ev.approvalId)}" data-approved="false">Deny</button></div>`;
       log.insertBefore(d, log.querySelector('.working')); return toBottom();
     }
     if (ev.type === 'signin') {
@@ -260,10 +579,6 @@ button:disabled { opacity: .5; cursor: default; }
       const offer = ev.offer && NAMES[ev.offer] ? `<button class="act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button>` : '';
       d.innerHTML = `<span>${esc(ev.text)}</span><div class="acts">${ev.open ? appLink(ev, ev.installed === false ? `Get the ${ev.app}` : `Open ${ev.app}`, 'act') : ''}${offer}</div>`;
       log.insertBefore(d, log.querySelector('.working')); return toBottom();
-    }
-    if (ev.type === 'tool' || ev.type === 'status') {
-      workingRow().querySelector('.step').textContent = ev.type === 'tool' ? 'Checking: ' + ev.text.replace(/^(Bash|Shell): /, '') : ev.text;
-      return toBottom();
     }
     const d = document.createElement('div');
     if (ev.type === 'text') { d.className = 'msg ' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="who">${esc(NAMES[ev.engine] || 'Claude')}${ev.modelLabel ? ' · ' + esc(ev.modelLabel) : ''}</div>${md(ev.text)}` : esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
@@ -278,7 +593,8 @@ button:disabled { opacity: .5; cursor: default; }
     running = on;
     $('send').classList.toggle('stop', on); $('send').textContent = on ? '■' : '↑'; $('send').setAttribute('aria-label', on ? 'Stop' : 'Send');
     log.querySelector('.after')?.remove();
-    if (on) { workingRow(); return toBottom(); }
+    if (on) { const last = log.querySelector('ol.steps.open li:last-child'); if (last) last.className = 'now'; workingRow(); paintCard(); return toBottom(); }
+    closeSteps(); lastStep = '';
     log.querySelector('.working')?.remove();
     log.querySelectorAll('[data-approval-row]').forEach(row => { row.querySelectorAll('button').forEach(b => b.disabled = true); if (row.querySelector('.approval-state').textContent === 'Owner approval required') row.querySelector('.approval-state').textContent = 'Expired'; });
     if (current && log.children.length) {
@@ -286,6 +602,7 @@ button:disabled { opacity: .5; cursor: default; }
       a.innerHTML = '<button class="chip" type="button" data-say="Thanks, it works now.">It works now</button><button class="chip" type="button" data-say="It\'s still not working.">Still not working</button><button class="chip" type="button" data-new="1">Something else</button>';
       log.appendChild(a); toBottom();
     }
+    paintCard();
   }
   async function poll() {
     if (!current) return;
@@ -293,12 +610,12 @@ button:disabled { opacity: .5; cursor: default; }
       const r = await api(`repair/${current}?since=${seq}`);
       for (const ev of r.events) { seq = ev.seq; paintEvent(ev); }
       if (r.running) { if (!running) setRunning(true); polling = setTimeout(poll, 1500); return; }
-      setRunning(false); refresh(true);
+      setRunning(false); refresh(true); loadIncidents();
     } catch { polling = setTimeout(poll, 4000); }
   }
   function openConv(id) { clearTimeout(polling); current = id; seq = 0; log.innerHTML = ''; history.replaceState(history.state, '', '#r=' + id); poll(); }
   function newChat() {
-    clearTimeout(polling); current = null; seq = 0; log.innerHTML = ''; $('welcome').hidden = false;
+    clearTimeout(polling); current = null; seq = 0; log.innerHTML = ''; $('welcome').hidden = false; app.classList.remove('chatting'); autoFold();
     history.replaceState(history.state, '', location.pathname); setRunning(false); refresh(true);
   }
   async function say(message) {
@@ -350,6 +667,7 @@ button:disabled { opacity: .5; cursor: default; }
   if (m) openConv(m[1]);
   refresh(false, false);
   loadEngines();
+  loadIncidents();
   setInterval(() => { if (!document.hidden) refresh(false); }, 20000);
 })();
 </script>
