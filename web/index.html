@@ -52,6 +52,17 @@ html[data-color-scheme="light"] { color-scheme: light; }
 html[data-color-scheme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body.diagnosed #scroll, body.diagnosed .composer, body.diagnosed footer, body.diagnosed #picker, body.diagnosed #pill { display: none !important; }
+body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 22px; max-width: 620px; width: 100%; margin: 0 auto; color: var(--text); font-size: 16px; }
+#reconnect h2 { font-size: 25px; line-height: 1.2; margin: 12px 0 16px; letter-spacing: -.5px; }
+#reconnect p { color: var(--muted); line-height: 1.5; }
+#reconnect ol { padding-left: 25px; margin: 26px 0; }
+#reconnect li { padding-left: 4px; margin: 0 0 16px; }
+#reconnect .act { display: block; width: 100%; text-align: center; min-height: 52px; padding: 14px; border-radius: 14px; background: var(--hivis); color: var(--hivis-ink); font-weight: 600; text-decoration: none; }
+#reconnect .something { display: block; margin: 28px auto 0; padding: 8px; background: none; border: 0; color: var(--muted); text-decoration: underline; font-size: 14px; cursor: pointer; }
+body.diagnosed .stage { display: none !important; }
+body.diagnosed { --bg: var(--wz-bg, #0c0919); --surface: var(--wz-surface, #171324); --surface-2: var(--wz-surface-2, #221b34); --text: var(--wz-text, #f3efff); --muted: var(--wz-text-muted, #a49abf); --line: var(--wz-border, #3a304e); --hivis: var(--wz-accent, #b99bff); --hivis-ink: var(--wz-on-accent, #0c0919); }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
 body { height: 100dvh; overflow: hidden; }
 button { font: inherit; color: inherit; }
@@ -275,6 +286,7 @@ button:disabled { opacity: .5; cursor: default; }
   <a class="back" id="back" href="/wizard-os-home/" aria-label="Back to Wizard"><b>‹</b> Wizard</a>
 </header>
 
+<div id="reconnect" class="signin" role="status" hidden></div>
 <div class="stage" id="stage">
   <aside class="status-col" aria-label="Status">
     <section class="rescue" id="rescue" aria-live="polite">
@@ -379,9 +391,16 @@ button:disabled { opacity: .5; cursor: default; }
   window.WzSheet = { open: show, close, wire };
 })();
 </script>
+<script src="/wizard-os-home/core/app-client.js"></script>
 <script>
 (() => {
   const $ = id => document.getElementById(id);
+  const applyTheme = theme => {
+    const tokens = theme?.tokens || theme?.variables || {};
+    for (const [key, value] of Object.entries(tokens)) if (key.startsWith('--wz-')) document.documentElement.style.setProperty(key, value);
+  };
+  applyTheme(window.WizardApp?.theme?.get?.());
+  window.WizardApp?.theme?.onChange?.(applyTheme);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const md = s => esc(s).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
   const H = { 'Content-Type': 'application/json', 'X-Wizard-Troubleshoot': '1' };
@@ -453,10 +472,47 @@ button:disabled { opacity: .5; cursor: default; }
   const when = iso => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const lower = s => String(s || '').replace(/^Your /, 'your ');
 
+  // Reuse the existing app-link and action components; this remains available with the normal chat down.
+  const recoveryParams = new URLSearchParams(location.search);
+  const recoveryProvider = recoveryParams.get('provider');
+  let diagnosed = ['claude', 'chatgpt'].includes(recoveryProvider) ? { engine: recoveryProvider, open: `/wizard-${recoveryProvider}/`, appId: `wizard-${recoveryProvider}`, installed: true } : null;
+  let otherProblem = false, recoverySent = false, recoveryMarkup = '';
+  function backToChat() {
+    // The shell owns the enclosing window. Never navigate the top-level document out of it.
+    if (window.parent !== window) { window.WizardApp?.nav?.back?.(); return; }
+    location.href = '/wizard-os-home/';
+  }
+  $('reconnect').addEventListener('click', e => {
+    if (e.target.closest('[data-other-problem]')) { otherProblem = true; paintReconnect(null); }
+    if (e.target.closest('[data-back-chat]')) backToChat();
+  });
+  function paintReconnect(a) {
+    if (a && ['claude', 'chatgpt'].includes(a.engine)) diagnosed = a;
+    const focused = diagnosed && !otherProblem;
+    document.body.classList.toggle('diagnosed', !!focused);
+    $('reconnect').hidden = !focused;
+    if (!focused) return;
+    const name = NAMES[diagnosed.engine];
+    const html = recoverySent
+      ? `<h2>${esc(name)} is signed in again. Your message was sent.</h2><button type="button" class="act" data-back-chat>Back to chat</button>`
+      : `<h2>${esc(name)}'s sign-in has expired</h2><p>Your Wizard can't send messages to ${esc(name)} until you sign in again.</p><ol><li>Tap Sign in to ${esc(name)}.</li><li>Sign in on the page that opens.</li><li>Come back here. Your waiting message sends on its own.</li></ol>${appLink(diagnosed, `Sign in to ${name}`, 'act')}<button type="button" class="something" data-other-problem>Something else is wrong</button>`;
+    if (html !== recoveryMarkup) { recoveryMarkup = html; $('reconnect').innerHTML = html; }
+  }
+  async function pollRecovery() {
+    if (!diagnosed || otherProblem || recoverySent) return;
+    const runId = recoveryParams.get('run_id');
+    if (!runId) return;
+    try {
+      const r = await fetch('/wizard/v1/provider-recovery?run_id=' + encodeURIComponent(runId), { cache: 'no-store', credentials: 'same-origin' });
+      if (r.ok && (await r.json()).sent) { recoverySent = true; paintReconnect(null); }
+    } catch {}
+  }
+  setInterval(pollRecovery, 1000);
+
   // The rescue card: one plain sentence about the state of Wizard, and what happens next.
   let actions = {}, lastStatus = null, statusFailed = false, lastStep = '';
   function paintCard() {
-    const s = lastStatus, bad = s ? s.checks.filter(c => !c.ok) : [];
+    const s = lastStatus, bad = s ? s.checks.filter(c => !c.ok && !c.skipped) : [];
     let state = !s ? (statusFailed ? 'unknown' : 'checking') : s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'degraded' : 'down';
     let kicker = 'Wizard Rescue', head, sub;
     if (running) {
@@ -479,7 +535,7 @@ button:disabled { opacity: .5; cursor: default; }
   // Status: the card and the checklist on the page, sign-ins and manual fixes in the details sheet.
   function paintStatus(s) {
     lastStatus = s; statusFailed = false; actions = s.actions || actions;
-    const bad = s.checks.filter(c => !c.ok);
+    const bad = s.checks.filter(c => !c.ok && !c.skipped);
     $('pillDot').className = 'dot ' + (s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'warn' : 'bad');
     $('pillText').textContent = s.overall === 'ok' ? 'All working' : bad.length === 1 ? bad[0].label + ': problem' : bad.length + ' problems';
     $('checksCount').textContent = `${s.checks.length - bad.length} of ${s.checks.length} OK`;
@@ -491,11 +547,18 @@ button:disabled { opacity: .5; cursor: default; }
       setEngines(s.accounts, s.engine);
       $('acct').innerHTML = s.accounts.map(a => `<div class="wz-row"><span class="mark ${a.ok ? 'ok' : 'bad'}" aria-hidden="true">${a.ok ? '✓' : '×'}</span><div class="m"><b>${esc(a.app)}</b><div class="d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok || !a.open ? '' : appLink(a, a.installed === false ? 'Get app' : 'Sign in', '')}</div>`).join('');
     }
+    paintReconnect(s.reconnect);
     paintCard(); autoFold();
     if (s.repair && !current) openConv(s.repair.convId);
   }
   async function refresh(fresh, accounts) {
-    try { paintStatus(await api('status?' + (fresh ? 'fresh=1&' : '') + (accounts ? 'accounts=1' : ''))); }
+    const query = new URLSearchParams();
+    if (fresh) query.set('fresh', '1');
+    if (accounts) query.set('accounts', '1');
+    // An empty trailing ? survives some private gateways' identity rewrite as
+    // /verify? rather than /verify, so ordinary page arrival must use /status.
+    const route = 'status' + (query.size ? '?' + query : '');
+    try { paintStatus(await api(route)); if (!accounts && !running) loadEngines(); }
     catch { $('pillDot').className = 'dot bad'; $('pillText').textContent = 'Can\'t check'; if (!lastStatus) { statusFailed = true; paintCard(); } }
   }
   async function loadIncidents() {
@@ -562,9 +625,9 @@ button:disabled { opacity: .5; cursor: default; }
       return;
     }
     if (ev.type === 'tool' || ev.type === 'status') {
-      const text = ev.type === 'tool' ? 'Checking: ' + ev.text.replace(/^(Bash|Shell): /, '') : ev.text;
-      lastStep = text; addStep(text);
-      if (running) { workingRow().querySelector('.step').textContent = text; paintCard(); }
+      const label = ev.type === 'tool' ? 'Checking: ' + ev.text.replace(/^(Bash|Shell): /, '') : ev.text;
+      lastStep = label; addStep(label);
+      if (running) { workingRow().querySelector('.step').textContent = label; paintCard(); }
       return toBottom();
     }
     if (!['approval', 'signin', 'text', 'note'].includes(ev.type)) return;
@@ -575,9 +638,10 @@ button:disabled { opacity: .5; cursor: default; }
       log.insertBefore(d, log.querySelector('.working')); return toBottom();
     }
     if (ev.type === 'signin') {
+      if (ev.state === 'expired') paintReconnect(ev);
       const d = document.createElement('div'); d.className = 'signin';
       const offer = ev.offer && NAMES[ev.offer] ? `<button class="act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button>` : '';
-      d.innerHTML = `<span>${esc(ev.text)}</span><div class="acts">${ev.open ? appLink(ev, ev.installed === false ? `Get the ${ev.app}` : `Open ${ev.app}`, 'act') : ''}${offer}</div>`;
+      d.innerHTML = `<span>${esc(ev.text)}</span><div class="acts">${ev.open && ev.state !== 'expired' ? appLink(ev, ev.installed === false ? `Get the ${ev.app}` : `Open ${ev.app}`, 'act') : ''}${offer}</div>`;
       log.insertBefore(d, log.querySelector('.working')); return toBottom();
     }
     const d = document.createElement('div');

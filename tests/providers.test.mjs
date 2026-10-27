@@ -29,7 +29,7 @@ function hostEnv(state, extra = {}) {
   return {
     TROUBLESHOOT_STATE: state, TROUBLESHOOT_DEV_NO_AUTH: '1', TS_SOCKET: path.join(state, 'no.sock'),
     AGENT_PORT: '1', HERMES_PORT: '2', SHELL_PORT: '3', GATEWAY_PORT: '4', AUTH_PORT: '',
-    CLAUDE_CONFIG_DIR: path.join(state, 'claude-empty'), CLAUDE_BIN: '/bin/false',
+    CLAUDE_CONFIG_DIR: path.join(state, 'claude-empty'), CLAUDE_BIN: '/bin/false', CODEX_BIN: '/bin/false', CODEX_HOME: path.join(state, 'codex-empty'), HERMES_ENV_FILE: path.join(state, 'no-env'),
     CHATGPT_AUTH_FILE: path.join(state, 'no-auth.json'), CHATGPT_BASE_URL: 'http://127.0.0.1:9',
     TINFOIL_URL: 'http://127.0.0.1:9', TINFOIL_TOKEN_FILE: path.join(state, 'no-token.json'),
     DOCKER_BIN: '/bin/false', HOME: process.env.HOME, WIZARD_APPS_FILE: path.join(state, 'no-apps.json'), ...extra,
@@ -227,7 +227,7 @@ test('Tinfoil tool loop: diagnoses with checks and applies a fixed fix to a fail
 
 test('run_fix refuses to restart a link that is working', async () => {
   const state = tmp();
-  process.env.TROUBLESHOOT_STATE = state;
+  Object.assign(process.env, hostEnv(state));
   const shell = await listen((req, res) => res.end('ok'));
   process.env.SHELL_PORT = String(shell.port); process.env.SHELL_CONTAINER = 'fake-shell'; process.env.DOCKER_BIN = '/bin/false';
   try {
@@ -395,7 +395,7 @@ test('picker: the choice is saved on the server and survives a restart; unknown 
   finally { s.child.kill(); }
 });
 
-test('picker: the selected provider\'s sign-in expired -> plain message, Open app, offer the next one, no silent switch', async () => {
+test('picker: expired sign-in tries the next provider with a plain note and preserves the saved preference', async () => {
   const state = tmp();
   fs.writeFileSync(path.join(state, 'auth.json'), JSON.stringify({ providers: { 'openai-codex': { tokens: { access_token: fakeJwt(-1) } } } }));
   let chatgptCalls = 0;
@@ -411,9 +411,9 @@ test('picker: the selected provider\'s sign-in expired -> plain message, Open ap
     const s = c.events.find(x => x.type === 'signin');
     assert.match(s.text, /ChatGPT app's sign-in has expired/);
     assert.equal(s.open, '/wizard-chatgpt/');
-    assert.equal(s.offer, 'claude', 'offers the next ready provider');
-    assert.ok(!/Trying/.test(s.text));
-    assert.ok(!c.events.some(x => x.type === 'text' && x.role === 'agent'), 'nobody else answered on its own');
+    assert.equal(s.state, 'expired');
+    assert.match(s.text, /Trying Claude instead/);
+    assert.ok(c.events.some(x => x.type === 'text' && x.role === 'agent' && x.engine === 'claude'), 'backup provider answers automatically');
     assert.ok(!c.events.some(x => x.type === 'note' && /No AI could answer/.test(x.text)));
     assert.equal(chatgptCalls, 0);
     assert.equal((await engines(port)).selected, 'chatgpt', 'the saved choice is unchanged');

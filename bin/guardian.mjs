@@ -33,12 +33,13 @@ export function guardianToken() {
 }
 
 async function postThread(key, body) {
-  if (!THREAD || DRY) return;
+  if (!THREAD || DRY) return false;
   const f = path.join(CONFIG.stateDir, 'post.md');
   fs.writeFileSync(f, body);
   const py = path.join(os.homedir(), '.hermes/hermes-agent/venv/bin/python');
   const r = await run(py, [path.join(os.homedir(), '.hermes/scripts/wizard_thread_post.py'), THREAD, key, f], { timeout: 60000 });
   if (!r.ok) logIncident({ kind: 'report-failed', detail: (r.err || r.out).slice(-300) });
+  return r.ok;
 }
 
 function startAiRepair(message) {
@@ -65,21 +66,27 @@ async function main() {
   if (await deployInProgress()) { console.log('Agent Service update in progress; checking again next minute.'); return; }
   const status = await runChecks();
   const byId = Object.fromEntries(CHECKS.map(c => [c.id, c]));
-  const failing = status.checks.filter(c => !c.ok);
+  const failing = status.checks.filter(c => !c.ok && !c.skipped);
   const actionsTaken = [];
 
-  for (const c of status.checks) s.fails[c.id] = c.ok ? 0 : (s.fails[c.id] || 0) + 1;
+  s.probeSeen ||= {};
+  for (const c of status.checks) {
+    if (c.ok) s.fails[c.id] = 0;
+    else if (!byId[c.id].replyProbe || (c.checkedAt && s.probeSeen[c.id] !== c.checkedAt)) s.fails[c.id] = (s.fails[c.id] || 0) + 1;
+    if (c.checkedAt) s.probeSeen[c.id] = c.checkedAt;
+  }
+  const isCoreFailure = c => !c.ok && !byId[c.id].noAutoFix && (c.id !== 'agent-reply' || s.fails[c.id] >= 2);
 
   // Outage bookkeeping (only core links count as "Wizard is down").
-  const core = failing.filter(c => !byId[c.id].noAutoFix);
+  const core = failing.filter(isCoreFailure);
   if (core.length && !s.outage) {
     s.outage = { since: now, first: core.map(c => `${c.label}: ${c.detail}`) };
-    logIncident({ kind: 'outage', text: `Problem found: ${core.map(c => `${c.label} (${bare(c.detail)})`).join('; ')}` });
+    logIncident({ kind: 'outage', text: core.some(c => c.id === 'agent-reply') ? `Wizard can't reply: ${bare(core.find(c => c.id === 'agent-reply').detail)}` : `Problem found: ${core.map(c => `${c.label} (${bare(c.detail)})`).join('; ')}` });
   }
 
   for (const c of failing) {
     const def = byId[c.id];
-    if (def.noAutoFix || s.fails[c.id] < (def.threshold || 2)) continue;
+    if (def.noAutoFix || c.id === 'agent-reply' || c.state === 'expired' || s.fails[c.id] < (def.threshold || 2)) continue;
     const recent = (s.fixes[c.id] || []).filter(t => now - t < HOUR);
     s.fixes[c.id] = recent;
     const release = def.rollback ? await lastAgentRelease() : null;
@@ -102,8 +109,19 @@ async function main() {
     if (fixed) s.fails[c.id] = 0;
   }
 
-  // Last resort: hand it to the owner's AI subscription with full server access.
-  const stuck = failing.filter(c => !byId[c.id].noAutoFix && s.fails[c.id] >= 6 && (s.fixes[c.id] || []).length >= 2);
+  // A dead login cannot be restarted away. Start the independent repair chat after two real failures.
+  const replyDown = core.find(c => c.id === 'agent-reply');
+  if (replyDown && s.outage && !s.outage.reported) {
+    const reported = await postThread(`guardian-outage-${s.outage.since}`, `**Wizard can't reply: ${bare(replyDown.detail)}.** Open the Troubleshooter and tap Sign in again to reconnect your account from this device: /troubleshoot/`);
+    if (reported) s.outage.reported = true;
+  }
+  if (replyDown && !DRY && !s.outage?.repairStarted) {
+    const r = await startAiRepair(`Wizard can't reply: ${replyDown.detail} Check which sign-in expired. Do not restart services to fix a sign-in. Explain how to reconnect through the connection app from the phone. Do not change credentials.`);
+    if (r?.id) { s.lastAiRepair = now; s.outage.repairStarted = r.id; logIncident({ kind: 'repair-started', conversation: r.id, text: `Wizard can't reply. A backup repair chat has started; sign in again from the Troubleshooter.` }); }
+  }
+
+  // Last resort for infrastructure: shared repair tools, never unapproved server access.
+  const stuck = failing.filter(c => c.id !== 'agent-reply' && !byId[c.id].noAutoFix && s.fails[c.id] >= 6 && (s.fixes[c.id] || []).length >= 2);
   if (stuck.length && now - (s.lastAiRepair || 0) > AI_REPAIR_GAP && !DRY) {
     const msg = `Automatic check: Wizard has been broken for ${s.fails[stuck[0].id]} minutes and restarts did not fix it.\n` +
       stuck.map(c => `- ${c.label}: ${c.detail}`).join('\n') + `\nFind the cause, fix it, verify with the status script, and explain what you did in plain words.`;
@@ -116,7 +134,7 @@ async function main() {
   }
 
   // Recovery and reporting.
-  const stillCore = (await (actionsTaken.length ? runChecks() : Promise.resolve(status))).checks.filter(c => !c.ok && !byId[c.id].noAutoFix);
+  const stillCore = (await (actionsTaken.length ? runChecks() : Promise.resolve(status))).checks.filter(isCoreFailure);
   if (s.outage && !stillCore.length) {
     const mins = Math.max(1, Math.round((now - s.outage.since) / 60e3));
     logIncident({ kind: 'recovered', text: `Wizard is working again (problem lasted about ${mins} min).` });

@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease } from './lib/checks.mjs';
 import { startRepair, loadConv, listConvs, busy, stopRepair, bridgeToken, bridgeRequest, decideApproval } from './lib/repair.mjs';
 import { toolDefs } from './lib/toolloop.mjs';
-import { allSignins, engineOrder, ENGINES, selectedEngine, saveEngine } from './lib/providers.mjs';
+import { allSignins, engineOrder, ENGINES, selectedEngine, saveEngine, appLink, META } from './lib/providers.mjs';
 
 function guardianToken() {
   const f = path.join(CONFIG.stateDir, 'guardian.token');
@@ -92,7 +92,7 @@ function readBody(req, max = 32768) {
 let statusCache = null;
 async function status(fresh) {
   if (!fresh && statusCache && Date.now() - statusCache.t < 3000) return statusCache.v;
-  const v = await runChecks();
+  const v = await runChecks({ force: !!fresh });
   statusCache = { t: Date.now(), v };
   return v;
 }
@@ -135,14 +135,17 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && (p === '/' || p === '/index.html')) return send(res, 200, fs.readFileSync(PAGE, 'utf8'), {
-      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
     });
     if (req.method === 'GET' && p === '/api/ping') return send(res, 200, { ok: true });
     if (req.method === 'GET' && p === '/api/status') {
       const s = await status(url.searchParams.get('fresh') === '1');
       let extra = {};
       if (url.searchParams.get('accounts') === '1') { const accounts = await allSignins(); extra = { accounts, order: engineOrder('auto'), engine: selectedEngine(accounts) }; }
-      return send(res, 200, { ...s, ...extra, release: await lastAgentRelease(), repair: busy() || null, actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '' }])) });
+      const expired = s.checks.find(c => !c.ok && c.state === 'expired');
+      const eng = expired && ENGINES.find(e => META[e].name === expired.provider || expired.id === `reply-${e}`);
+      const reconnect = eng ? { engine: eng, ...META[eng], ...appLink(eng), state: 'expired' } : null;
+      return send(res, 200, { ...s, ...extra, reconnect, release: await lastAgentRelease(), repair: busy() || null, actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '' }])) });
     }
     if (req.method === 'GET' && p === '/api/incidents') return send(res, 200, { incidents: readIncidents(40) });
     if (req.method === 'POST' && p === '/api/action') {

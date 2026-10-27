@@ -27,8 +27,10 @@ all be down and it still works.
   that is signed in (Claude first). The choice is saved on the server (`prefs.json` in the state dir, `POST
   /api/engine`), so every device shows the same one. Providers that can't answer are shown disabled with a short
   reason. Each answer is labelled with provider and model. If the picked provider's sign-in is missing or expired,
-  the chat says so plainly with an **Open … app** button and offers **Ask <next> instead**; it never switches on its
-  own. The Guardian's automatic repairs still use the order Claude, then ChatGPT, then Tinfoil. Runs survive the browser disconnecting. Briefed by `REPAIR_PROMPT.md`, with this
+  the chat says so plainly. An expired sign-in or usage-limit notice (including assistant-text notices) is not
+  an answer: the next provider takes over with a visible note. The saved preference stays unchanged. A missing
+  connection still offers **Ask <next> instead**. The header shows one **Sign in to Claude again** (or ChatGPT)
+  link from App Manager's existing connection-app registry; no separate login page or normal-agent dependency. The Guardian's automatic repairs still use the order Claude, then ChatGPT, then Tinfoil. Runs survive the browser disconnecting. Briefed by `REPAIR_PROMPT.md`, with this
   box's wiring filled in from configuration.
   - **Claude** (Claude app): Claude Code runs with built-in tools disabled and only the shared repair MCP tools, using the login directory the Claude
     app's engine mounts (`~/.claude`, or `CLAUDE_CONFIG_DIR`). Used in place. Claude Code renews it itself.
@@ -36,7 +38,9 @@ all be down and it still works.
     store (`credential_owner: hermes`), the file `~/.hermes/auth.json` (`CHATGPT_AUTH_FILE`). The Troubleshooter
     reads the current access token from that file at call time and calls the ChatGPT Codex endpoint directly. Hermes
     does not need to be running. It never refreshes or copies the token: refresh tokens are single-use. If the
-    current sign-in is rate-limited or rejected, the next pooled sign-in in the same store is tried.
+    current sign-in is rate-limited or rejected, the next pooled sign-in in the same store is tried. Legacy boxes
+    whose sign-in is in Codex use `CODEX_BIN`/`CODEX_HOME` through an ephemeral, read-only JSON-turn adapter.
+    Its shell, execution, MCP, hooks, plugins and web tools are disabled; only the shared owner-approved tools run.
   - **Tinfoil** (Tinfoil app, private): the Tinfoil key never leaves the app. The Troubleshooter calls the app's
     box-only, attested `/v1/chat/completions` gateway with the app's local gateway credential, which it reads from the
     app's store at call time (`docker exec … cat /data/private/gateway-token.json`, or `TINFOIL_TOKEN_FILE`).
@@ -47,11 +51,16 @@ all be down and it still works.
   - The shared `repair_scope`, `read_file`, `write_file`, and `run_command` tools provide bounded host repair. Configure `REPAIR_POLICY_FILE` to an owner/admin-controlled JSON file with exact `files` and fixed `commands`. No policy means no file or command grants, not unrestricted access. Writes and command execution require an explicit **Approve this exact action** click in the owner-gated page; the model cannot approve itself. Denial, timeout (five minutes), Stop, or service restart fail closed. Guardian chats cannot approve these operations. Existing one-tap targets are retained; repair-chat `run_fix` now also requires owner approval before executing. `REPAIR_STANDBY_LOCK` fences mutations when the host is standby; `REPAIR_PROTECT_HERMES=1` refuses the gateway self-stop path (use an idle out-of-band operator). The Troubleshooter cannot restart itself from a running repair.
   - Example policy (use your own exact paths): `{"files":["/home/wizard/repair-fixtures/config.json"],"commands":{"verify_config":{"executable":"/usr/bin/node","args":["/home/wizard/repair-fixtures/verify.cjs"],"cwd":"/home/wizard/repair-fixtures"}}}`. Policy commands are administrative authority: review the executable/script and arguments before granting them; never grant a general shell or a script that an allowed file edit can change. The model supplies only the command id, not argv. No API can expand policy. File edits are limited to existing small (4 KiB), non-secret regular files, deny symlinks/hardlinks and protected agent/sign-in/database paths, require a fresh SHA-256, retain a private backup, and read back the result. File content/command approval details are shown to the owner before execution.
   - Operational grants may use `files: [{"path":"/exact/unit.conf","writable":false}]` for inspection only, or `{"path":"/exact/repair-delay.conf","writable":true,"format":"restart-delay"}`. The latter accepts **only** `[Service]` + `RestartSec=2..60` + newline, not `ExecStart`, environments, security directives, or other unit fields. Never grant arbitrary writes to a service unit: that would be a shell-equivalent escape. Format and writable grants are rechecked after owner approval and immediately before commit. `bin/host-operations.mjs` is the local administrative target (it resolves the owning user's home and runtime directory, so it works on any box): registry structure summary (not raw registry contents), recovery-config validation/effective systemd readback, user daemon-reload, and only four named auxiliary-unit restarts. It is not itself writable by repair tools. It never changes routes, auth, host roles, deployment targets, or network security. The repair policy file itself stays per-box and opt-in: a fresh box grants nothing until its owner adds reviewed paths and commands.
-  - ChatGPT defaults to the subscription-verified `gpt-6.1-sol` (`CHATGPT_MODEL` still overrides it). Returned model substitutions are refused. Saved engine choice and explicit failure offers remain unchanged. Claude quota/system notices are not stored as successful answers or fake model labels. Auth readiness is not a promise of remaining provider quota.
+  - ChatGPT defaults to the subscription-verified `gpt-6.1-sol` (`CHATGPT_MODEL` still overrides it). Returned model substitutions are refused. The saved engine preference remains unchanged during auth/limit fallback. Claude quota/system notices are not stored as successful answers or fake model labels. Auth readiness is not a promise of remaining provider quota.
 - **Guardian** (`wizard-guardian.timer`, every minute): restarts a link after 2–3 consecutive failed checks,
   undoes a fresh Agent Service update if a restart doesn't help, and after ~6 failed minutes starts a repair
   chat itself. It waits while an Agent Service deploy holds `deploy.lock`, caps restarts at 3/hour per link,
-  and reports once into the owner's Wizard thread (`GUARDIAN_THREAD`).
+  and reports once into the owner's Wizard thread (`GUARDIAN_THREAD`). It also sends a tiny real message through
+  the main agent (`Your agent can reply`) and every connected repair engine. An HTTP 200 response containing
+  a provider-auth failure is a failed reply, not a healthy service. Healthy results are shared for ten minutes;
+  failures retry each minute. `GET /api/status?fresh=1` forces a new check. After two distinct failed main-agent
+  replies, it reports the outage and starts the independent backup repair chat. A dead sign-in spends no restart
+  budget. Recovery is logged and reported once. Keys and provider output are never saved in the probe cache.
 
 Owner gate: the service takes the peer address from the front door and confirms a human (untagged) tailnet principal
 via Tailscale whois, the same policy as the sign-in bridge, without depending on it. With `TROUBLESHOOT_OWNERS` set,
