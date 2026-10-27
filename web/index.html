@@ -143,9 +143,16 @@ button:disabled { opacity: .5; cursor: default; }
   <div class="bottom"><button class="act" id="closeSheet" type="button">Done</button></div>
 </div></div>
 
+<script src="/wizard-os-home/core/app-client.js"></script>
 <script>
 (() => {
   const $ = id => document.getElementById(id);
+  const applyTheme = theme => {
+    const tokens = theme?.tokens || theme?.variables || {};
+    for (const [key, value] of Object.entries(tokens)) if (key.startsWith('--wz-')) document.documentElement.style.setProperty(key, value);
+  };
+  applyTheme(window.WizardApp?.theme?.get?.());
+  window.WizardApp?.theme?.onChange?.(applyTheme);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const md = s => esc(s).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
   const H = { 'Content-Type': 'application/json', 'X-Wizard-Troubleshoot': '1' };
@@ -205,7 +212,9 @@ button:disabled { opacity: .5; cursor: default; }
 
   // Reuse the existing app-link and action components; this remains available with the normal chat down.
   const recoveryParams = new URLSearchParams(location.search);
-  let diagnosed = null, otherProblem = false, recoverySent = false, recoveryMarkup = '';
+  const recoveryProvider = recoveryParams.get('provider');
+  let diagnosed = ['claude', 'chatgpt'].includes(recoveryProvider) ? { engine: recoveryProvider, open: `/wizard-${recoveryProvider}/`, appId: `wizard-${recoveryProvider}`, installed: true } : null;
+  let otherProblem = false, recoverySent = false, recoveryMarkup = '';
   function backToChat() {
     // The shell owns the enclosing window. Never navigate the top-level document out of it.
     if (window.parent !== window) { window.WizardApp?.nav?.back?.(); return; }
