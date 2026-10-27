@@ -159,7 +159,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && p === '/api/engines') { const engines = await allSignins(); return send(res, 200, { engines, order: engineOrder('auto'), selected: selectedEngine(engines), tools: toolDefs(), permissions: 'shared-owner-approved-allowlist' }); }
     if (req.method === 'POST' && p === '/api/engine') { const b = await readBody(req); return send(res, 200, { selected: saveEngine(b.engine) }); }
-    if (req.method === 'GET' && p === '/api/repairs') return send(res, 200, { repairs: listConvs(), running: busy() || null });
+    // Past sessions (read-only list, newest first). ?limit=1..50, default 10.
+    if (req.method === 'GET' && p === '/api/repairs') return send(res, 200, { repairs: listConvs(url.searchParams.get('limit') || 10), running: busy() || null });
     if (req.method === 'POST' && p === '/api/repair') {
       const b = await readBody(req);
       const engine = ['auto', ...ENGINES].includes(b.engine) ? b.engine : 'auto';
@@ -180,7 +181,7 @@ const server = http.createServer(async (req, res) => {
       const c = loadConv(m[1]);
       if (!c) return send(res, 404, { error: 'Not found' });
       const since = +(url.searchParams.get('since') || 0);
-      return send(res, 200, { id: c.id, title: c.title, running: !!c.running, events: c.events.filter(e => e.seq > since) });
+      return send(res, 200, { id: c.id, title: c.title, createdAt: c.createdAt || null, origin: c.origin, running: !!c.running, events: c.events.filter(e => e.seq > since) });
     }
     return send(res, 404, { error: 'Not found' });
   } catch (e) {
