@@ -624,9 +624,9 @@ button:disabled { opacity: .5; cursor: default; }
       return;
     }
     if (ev.type === 'tool' || ev.type === 'status') {
-      const text = ev.type === 'tool' ? 'Checking: ' + ev.text.replace(/^(Bash|Shell): /, '') : ev.text;
-      lastStep = text; addStep(text);
-      if (running) { workingRow().querySelector('.step').textContent = text; paintCard(); }
+      const label = ev.type === 'tool' ? 'Checking: ' + ev.text.replace(/^(Bash|Shell): /, '') : ev.text;
+      lastStep = label; addStep(label);
+      if (running) { workingRow().querySelector('.step').textContent = label; paintCard(); }
       return toBottom();
     }
     if (!['approval', 'signin', 'text', 'note'].includes(ev.type)) return;
