@@ -48,6 +48,13 @@ const B = process.argv[2], OUT = process.argv[3] || '.';
   // Past repair chats: listed in the details sheet with their first line; tapping one opens it.
   await p.locator('[data-new]').tap(); await p.waitForTimeout(500);
   ok('Something else brings back the one-tap buttons', await p.locator('#welcome').isVisible() && (await p.locator('.chips .chip').count()) === 4 && !(await p.locator('.msg').count()));
+  await p.waitForSelector('#recent:not([hidden]) .past');
+  ok('recent chats show under the one-tap buttons', /My Wizard is down/.test(await p.locator('#recentList .past').first().textContent()));
+  ok('status line is one plain sentence', /^(Everything is working|Something's wrong: .+|Slow: .+|\d+ things need fixing)$/.test((await p.locator('#pillText').textContent()).trim()));
+  await p.screenshot({ path: `${OUT}/phone-recent.png` });
+  await p.locator('#recentList .past').first().tap(); await p.waitForTimeout(1200);
+  ok('tapping a recent chat reopens it', (await p.locator('.msg.agent').count()) === 1 && /#r=[a-f0-9]{16}/.test(p.url()));
+  await p.locator('[data-new]').tap(); await p.waitForTimeout(500);
   await p.locator('#pill').tap(); await p.waitForSelector('#sheet[open] .past');
   ok('details list the past chat with its first line', /My Wizard is down/.test(await p.locator('#past .past').first().textContent()));
   await p.locator('#past .past').first().tap(); await p.waitForTimeout(1200);

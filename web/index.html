@@ -37,6 +37,15 @@ header h1 { font-size: 16px; font-weight: 600; margin: 0; flex: 1; }
 a.back { color: var(--text); text-decoration: none; font-size: 24px; line-height: 1; padding: 4px 8px 6px 2px; }
 .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); background: none; border: 0; padding: 8px 4px 8px 8px; cursor: pointer; max-width: 60vw; }
 .pill span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Status line: one plain sentence about Wizard, details on tap. */
+.statusline { flex: 1; max-width: none; min-height: 44px; font-size: 15px; color: var(--text); padding: 8px 4px; text-align: left; }
+.statusline #pillText { flex: 1; min-width: 0; }
+.statusline .more { flex: none; font-size: 13px; color: var(--muted); }
+body.hosted header h1 { display: none; }
+/* Recent repair chats, right under the one-tap buttons. */
+.recent { margin-top: 22px; }
+.recent h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 2px; }
+.recent .all { background: none; border: 0; padding: 10px 0; min-height: 44px; color: var(--muted); font-size: 13px; text-decoration: underline; cursor: pointer; }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
 .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
 #scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
@@ -116,8 +125,8 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
 <body>
 <header>
   <a class="back" id="back" href="/wizard-os-home/" aria-label="Back to Wizard">‹</a>
-  <h1>Fix Wizard</h1>
-  <button class="pill" id="pill" type="button" aria-label="Show system details"><span class="dot" id="pillDot"></span><span id="pillText">Checking…</span></button>
+  <h1 hidden>Fix Wizard</h1>
+  <button class="pill statusline" id="pill" type="button" aria-label="Show system details"><span class="dot" id="pillDot"></span><span id="pillText">Checking Wizard…</span><span class="more">Details ›</span></button>
 </header>
 
 <div id="reconnect" class="signin" role="status" hidden></div>
@@ -131,6 +140,11 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
       <button class="chip" type="button" data-say="My messages won't send in Wizard. Please fix it.">Messages won't send</button>
       <button class="chip" type="button" data-say="My agent isn't replying in Wizard. Please fix it.">My agent isn't replying</button>
       <button class="chip" type="button" data-say="Wizard is really slow. Please find out why and fix it.">Wizard is slow</button>
+    </div>
+    <div class="recent" id="recent" hidden>
+      <h2>Recent chats</h2>
+      <div id="recentList"></div>
+      <button class="all" id="allChats" type="button">All chats</button>
     </div>
   </section>
   <div class="log" id="log"></div>
@@ -152,7 +166,7 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   <h2>Manual fixes</h2>
   <div class="fixes" id="fixes"></div>
   <div class="fixmsg" id="fixMsg" role="status"></div>
-  <div id="pastWrap" hidden><h2>Earlier repair chats</h2><div id="past"></div></div>
+  <div id="pastWrap" hidden><h2>All repair chats</h2><div id="past"></div></div>
   <div id="incWrap" hidden><h2>Recently</h2><div id="incidents"></div></div>
   <div class="bottom"><button class="act" id="closeSheet" type="button">Done</button></div>
 </dialog>
@@ -277,7 +291,9 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
     lastStatus = s; actions = s.actions || actions;
     const bad = s.checks.filter(c => !c.ok && !c.skipped);
     $('pillDot').className = 'dot ' + (s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'warn' : 'bad');
-    $('pillText').textContent = s.overall === 'ok' ? 'All working' : bad.length === 1 ? bad[0].label + ': problem' : bad.length + ' problems';
+    $('pillText').textContent = s.overall === 'ok' ? 'Everything is working'
+      : bad.length === 1 ? `${s.overall === 'degraded' ? 'Slow' : 'Something\'s wrong'}: ${bad[0].label.replace(/^Your /, 'your ')}`
+      : `${bad.length} things need fixing`;
     $('alert').hidden = s.overall === 'ok' || !bad.length;
     if (bad.length) $('alertText').textContent = `I can already see a problem with ${bad[0].label.replace(/^Your /, 'your ')}: ${String(bad[0].detail || '').replace(/\.$/, '').toLowerCase()}. Tap below and I'll fix it.`;
     $('checks').innerHTML = s.checks.map(c => `<div class="row"><span class="dot ${c.skipped ? '' : c.ok ? (c.slow ? 'warn' : 'ok') : 'bad'}"></span><div class="m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="d">${esc(c.detail)}</div>`}</div></div>`).join('');
@@ -297,7 +313,7 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
     // /verify? rather than /verify, so ordinary page arrival must use /status.
     const route = 'status' + (query.size ? '?' + query : '');
     try { paintStatus(await api(route)); if (!accounts && !running) loadEngines(); }
-    catch { $('pillDot').className = 'dot bad'; $('pillText').textContent = 'Can\'t check'; }
+    catch { $('pillDot').className = 'dot bad'; $('pillText').textContent = 'Can\'t check Wizard right now'; }
   }
   async function loadIncidents() {
     try {
@@ -391,7 +407,7 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   function openConv(id) { clearTimeout(polling); current = id; seq = 0; log.innerHTML = ''; history.replaceState(history.state, '', '#r=' + id); poll(); }
   function newChat() {
     clearTimeout(polling); current = null; seq = 0; log.innerHTML = ''; $('welcome').hidden = false;
-    history.replaceState(history.state, '', location.pathname + location.search); setRunning(false); refresh(true);
+    history.replaceState(history.state, '', location.pathname + location.search); setRunning(false); refresh(true); loadPast();
   }
   async function say(message) {
     message = String(message || '').trim(); if (!message || running) return;
@@ -428,14 +444,20 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   $('input').addEventListener('input', autosize);
   $('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer:fine)').matches) { e.preventDefault(); say($('input').value); } });
 
+  const pastRow = r => `<button class="past" type="button" data-conv="${esc(r.id)}">${esc(r.first || r.title)}<div class="small">${esc(when(r.updatedAt || r.createdAt))}${r.origin === 'guardian' ? ' · started automatically' : ''}</div></button>`;
   async function loadPast() {
     try {
       const { repairs } = await api('repairs?limit=20');
-      const others = repairs.filter(r => r.id !== current).slice(0, 8);
+      const others = repairs.filter(r => r.id !== current);
       $('pastWrap').hidden = !others.length;
-      $('past').innerHTML = others.map(r => `<button class="past" type="button" data-conv="${esc(r.id)}">${esc(r.first || r.title)}<div class="small">${esc(when(r.updatedAt || r.createdAt))}${r.origin === 'guardian' ? ' · started automatically' : ''}</div></button>`).join('');
+      $('past').innerHTML = others.map(pastRow).join('');
+      $('recent').hidden = !others.length;
+      $('recentList').innerHTML = others.slice(0, 3).map(pastRow).join('');
+      $('allChats').hidden = others.length <= 3;
     } catch {}
   }
+  $('recentList').addEventListener('click', e => { const b = e.target.closest('[data-conv]'); if (b) openConv(b.dataset.conv); });
+  $('allChats').addEventListener('click', () => { openSheet(); requestAnimationFrame(() => $('pastWrap').scrollIntoView({ block: 'start' })); });
   // Wait for the sheet's own history entry to pop before setting the thread's hash, or history.back() wipes it.
   $('past').addEventListener('click', e => {
     const b = e.target.closest('[data-conv]'); if (!b) return;
@@ -448,6 +470,7 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   if (m) openConv(m[1]);
   refresh(false, false);
   loadEngines();
+  loadPast();
   setInterval(() => { if (!document.hidden) refresh(false); }, 20000);
 })();
 </script>
