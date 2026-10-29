@@ -2,8 +2,8 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const page=fs.readFileSync(new URL('../web/index.html',import.meta.url),'utf8');
 test('a diagnosed problem shows one fix path in Fix Wizard',()=>{
  assert.match(page,/Your Wizard can't send messages to/);assert.match(page,/<ol><li>Tap Sign in to/);assert.match(page,/Come back here\. Your waiting message sends on its own/);assert.match(page,/Something else is wrong/);
- for(const selector of ['#scroll','.composer','footer','#picker','#pill'])assert.ok(page.includes('body.diagnosed '+selector));
- assert.doesNotMatch(page,/body\.diagnosed \{ --/,'the sign-in path keeps the selected skin; it never sets its own colours');
+ for(const selector of ['#scroll','.ts-composer','footer','#picker','#pill'])assert.ok(page.includes('body.ts-diagnosed '+selector));
+ assert.doesNotMatch(page,/body\.ts-diagnosed \{ --/,'the sign-in path keeps the selected skin; it never sets its own colours');
  assert.match(page,/appLink\(diagnosed, `Sign in to \$\{name\}`/);assert.match(page,/\['claude', 'chatgpt'\].includes\(a.engine\)/);
 });
 test('Back to chat asks the shell to go back, never navigates the top-level shell',()=>{
@@ -15,4 +15,11 @@ test('sign-in confirmation waits for the saved resend to finish, not merely an a
 test('the page may load the shell kit and skin stylesheets (same origin only)',()=>{
  const src=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
  assert.match(src,/style-src 'self' 'unsafe-inline'/);assert.match(page,/href="\/wizard-os-home\/kit\/wizard-tokens\.css"/);
+});
+test('every class the page uses is ts- prefixed, so skin and shell stylesheets cannot restyle it',()=>{
+ const css=page.slice(page.indexOf('<style>'),page.indexOf('</style>'));
+ const bare=[...css.matchAll(/(?<![\d])\.([a-z][a-z0-9-]*)(?![\w-])/g)].map(m=>m[1]).filter(n=>!n.startsWith('ts-'));
+ assert.deepEqual([...new Set(bare)],[]);
+ const attrs=[...page.matchAll(/class=\\?"([^"\\$]*)/g)].flatMap(m=>m[1].split(/\s+/)).filter(Boolean).filter(n=>!n.startsWith('ts-'));
+ assert.deepEqual([...new Set(attrs)],[]);
 });
