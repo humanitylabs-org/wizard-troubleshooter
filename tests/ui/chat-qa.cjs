@@ -34,8 +34,8 @@ const B = process.argv[2], OUT = process.argv[3] || '.';
   await p.waitForSelector('.msg.agent', { timeout: 15000 }); await p.waitForSelector('#send:not(.stop)', { timeout: 8000 });
   ok('answer labelled with provider and model', /Claude · Opus 5\.5/.test(await p.locator('.msg.agent .who').first().textContent()));
   ok('single owner message', (await p.locator('.msg.owner').count()) === 1);
-  ok('one status line, one sentence', (await p.locator('.statusline').count()) === 1 && (await p.locator('#say').textContent()).length < 60);
-  ok('the one action is gone once the rescue starts', !(await p.locator('#fix').isVisible()));
+  ok('the one-tap buttons give way to the conversation', !(await p.locator('#welcome').isVisible()));
+  ok('after a reply, one-tap follow-ups are offered', (await p.locator('.after .chip').count()) === 3);
   await p.screenshot({ path: `${OUT}/phone-reply.png` });
   await p.locator('#pill').tap(); await p.waitForTimeout(800);
   ok('details sheet opens', await p.locator('#sheet[open]').isVisible());
@@ -45,20 +45,17 @@ const B = process.argv[2], OUT = process.argv[3] || '.';
   ok('back closes sheet', !(await p.locator('#sheet[open]').count()));
   await p.reload(); await p.waitForTimeout(1500);
   ok('reload restores conversation', (await p.locator('.msg.agent').count()) === 1);
-  // Past sessions: listed newest first in the Sessions sheet (narrow), open read-only, New session returns to the composer.
-  await p.locator('#sessBtn').tap(); await p.waitForSelector('#sessSheet[open] .sess');
-  ok('sessions sheet lists the past thread with its first line', /My Wizard is down/.test(await p.locator('#sessSheetList .sess').first().textContent()));
-  await p.screenshot({ path: `${OUT}/phone-sessions.png` });
-  await p.evaluate(() => { location.hash = ''; }); await p.reload(); await p.waitForTimeout(1200);
-  await p.locator('#sessBtn').tap(); await p.waitForSelector('#sessSheet[open] .sess'); await p.locator('#sessSheetList .sess').first().tap(); await p.waitForTimeout(1200);
-  ok('past session opens read-only', await p.locator('#readonly').isVisible() && !(await p.locator('.composer').isVisible()) && (await p.locator('.msg.agent').count()) === 1);
-  ok('read-only past session is in the URL', /#past=[a-f0-9]{16}/.test(p.url()));
-  await p.locator('#readonly [data-new]').tap(); await p.waitForTimeout(500);
-  ok('New session brings back the composer', await p.locator('.composer').isVisible() && !(await p.locator('.msg').count()));
+  // Past repair chats: listed in the details sheet with their first line; tapping one opens it.
+  await p.locator('[data-new]').tap(); await p.waitForTimeout(500);
+  ok('Something else brings back the one-tap buttons', await p.locator('#welcome').isVisible() && (await p.locator('.chips .chip').count()) === 4 && !(await p.locator('.msg').count()));
+  await p.locator('#pill').tap(); await p.waitForSelector('#sheet[open] .past');
+  ok('details list the past chat with its first line', /My Wizard is down/.test(await p.locator('#past .past').first().textContent()));
+  await p.locator('#past .past').first().tap(); await p.waitForTimeout(1200);
+  ok('past chat opens with the sheet closed', !(await p.locator('#sheet[open]').count()) && (await p.locator('.msg.agent').count()) === 1 && /#r=[a-f0-9]{16}/.test(p.url()));
   const d = await br.newPage({ viewport: { width: 1280, height: 860 } });
   await d.goto(B + '/troubleshoot/'); await d.waitForSelector('.seg'); await d.waitForTimeout(800);
   await d.screenshot({ path: `${OUT}/desktop.png` });
-  ok('desktop: past sessions in a quiet left column', await d.locator('#sessCol').isVisible() && (await d.locator('#sessList .sess').count()) >= 1 && !(await d.locator('#sessBtn').isVisible()));
+  ok('desktop: one-tap buttons on the welcome screen', (await d.locator('.chips .chip').count()) === 4 && await d.locator('.chip.main').isVisible());
   // A status-only sign-in failure must stay actionable even with both normal-agent services down.
   for (const [engine, label] of [['claude', 'Claude'], ['chatgpt', 'ChatGPT']]) for (const skin of ['dark', 'light']) {
     const ctx = await br.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -79,7 +76,7 @@ const B = process.argv[2], OUT = process.argv[3] || '.';
     await ctx.route(`**/wizard-${engine}/`, route => route.fulfill({ contentType: 'text/html', body: `<h1>${label} Connect</h1>` }));
     const p = await ctx.newPage();
     await p.goto(B + '/troubleshoot/'); await p.waitForSelector('#reconnect:not([hidden])');
-    ok(`${label}/${skin}: one focused sign-in path, nothing else on screen`, !(await p.locator('.stage').isVisible()) && /sign-in has expired/.test(await p.locator('#reconnect h2').textContent()));
+    ok(`${label}/${skin}: one focused sign-in path, nothing else on screen`, !(await p.locator('#scroll').isVisible()) && /sign-in has expired/.test(await p.locator('#reconnect h2').textContent()));
     const button = p.getByRole('link', { name: `Sign in to ${label}`, exact: true });
     ok(`${label}/${skin}: exactly one reconnect action`, await button.count() === 1);
     const rect = await button.boundingBox();

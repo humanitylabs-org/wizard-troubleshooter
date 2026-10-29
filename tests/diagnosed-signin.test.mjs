@@ -2,8 +2,8 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const page=fs.readFileSync(new URL('../web/index.html',import.meta.url),'utf8');
 test('a diagnosed problem shows one fix path in Fix Wizard',()=>{
  assert.match(page,/Your Wizard can't send messages to/);assert.match(page,/<ol><li>Tap Sign in to/);assert.match(page,/Come back here\. Your waiting message sends on its own/);assert.match(page,/Something else is wrong/);
- for(const selector of ['#scroll','.composer','footer','#picker','#pill','.stage'])assert.ok(page.includes('body.diagnosed '+selector));
- assert.match(page,/body\.diagnosed \{ --bg: var\(--wz-bg/);
+ for(const selector of ['#scroll','.composer','footer','#picker','#pill'])assert.ok(page.includes('body.diagnosed '+selector));
+ assert.doesNotMatch(page,/body\.diagnosed \{ --/,'the sign-in path keeps the selected skin; it never sets its own colours');
  assert.match(page,/appLink\(diagnosed, `Sign in to \$\{name\}`/);assert.match(page,/\['claude', 'chatgpt'\].includes\(a.engine\)/);
 });
 test('Back to chat asks the shell to go back, never navigates the top-level shell',()=>{
