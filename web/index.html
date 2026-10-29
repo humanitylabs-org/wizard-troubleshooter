@@ -38,28 +38,37 @@ a.back { color: var(--text); text-decoration: none; font-size: 24px; line-height
 .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); background: none; border: 0; padding: 8px 4px 8px 8px; cursor: pointer; max-width: 60vw; }
 .pill span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Status line: one plain sentence about Wizard, details on tap. */
-.statusline { flex: 1; max-width: none; min-height: 44px; font-size: 15px; color: var(--text); padding: 8px 4px; text-align: left; }
-.statusline #pillText { flex: 1; min-width: 0; }
-.statusline .more { flex: none; font-size: 13px; color: var(--muted); }
+.statusline { flex: 1; max-width: none; min-height: 44px; font-size: 15px; font-weight: 500; color: var(--text); padding: 8px 4px; text-align: left; }
+.statusline #pillText { flex: 1 1 auto; min-width: 0; }
+.statusline .more { flex: none; font-size: 18px; line-height: 1; color: var(--muted); }
+/* Check again: one quiet icon button; it turns while checking. */
+.recheck { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
+.recheck:hover { background: var(--fill); color: var(--text); }
+.recheck svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.recheck.busy svg { animation: s .9s linear infinite; }
 body.hosted header h1 { display: none; }
 /* Recent repair chats, right under the one-tap buttons. */
-.recent { margin-top: 22px; }
-.recent h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 2px; }
-.recent .all { background: none; border: 0; padding: 10px 0; min-height: 44px; color: var(--muted); font-size: 13px; text-decoration: underline; cursor: pointer; }
+.recent { margin-top: 28px; }
+.recent .head { display: flex; align-items: center; justify-content: space-between; }
+.recent h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0; }
+.recent .all { background: none; border: 0; padding: 0 4px; min-height: 44px; color: var(--muted); font-size: 13px; cursor: pointer; }
+.recent .all:hover { color: var(--text); }
+#recentList .past { display: flex; align-items: baseline; gap: 12px; min-height: 44px; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+#recentList .past:first-child { border-top: 0; }
+#recentList .past .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#recentList .past .small { flex: none; }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
 .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
 #scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .wrap { max-width: 680px; margin: 0 auto; padding: 8px 16px 16px; min-height: 100%; display: flex; flex-direction: column; }
-.welcome { margin-top: auto; padding: 0 0 8px; }
-.welcome .big { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
-.welcome .sub { color: var(--muted); font-size: 15px; }
-.welcome .alert { margin-top: 14px; font-size: 14px; display: flex; gap: 10px; }
-.welcome .alert span:last-child { min-width: 0; overflow-wrap: anywhere; }
-.welcome .alert .dot { margin-top: 7px; }
+.welcome { padding: 20px 0 8px; }
+.welcome .big { font-size: 22px; font-weight: 600; margin: 0; }
 /* The one-tap buttons. */
-.chips { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; }
-.chip { text-align: left; background: var(--fill); border: 1px solid var(--line); border-radius: var(--radius-tile); padding: 12px 14px; min-height: 44px; cursor: pointer; }
-.chip.main { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+.chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-top: 16px; }
+.chip { text-align: left; background: var(--fill); border: 0; border-radius: var(--radius-tile); padding: 12px 14px; min-height: 48px; cursor: pointer; }
+.chip:hover { background: var(--fill2); }
+/* Only a real problem gets the accent: the first button then names what's wrong. */
+body.problem .chip.main { background: var(--accent); color: var(--on-accent); font-weight: 600; grid-column: 1 / -1; }
 .log { display: flex; flex-direction: column; gap: 14px; }
 .log:empty { display: none; }
 .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -78,15 +87,15 @@ body.hosted header h1 { display: none; }
 .spin { width: 13px; height: 13px; flex: none; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: s .9s linear infinite; }
 @keyframes s { to { transform: rotate(360deg); } }
 .after { display: flex; gap: 6px; flex-wrap: wrap; }
-.after .chip { padding: 8px 12px; font-size: 14px; }
+.after .chip { padding: 8px 12px; font-size: 14px; min-height: 40px; }
 footer { flex: none; padding: 4px 16px max(12px, env(safe-area-inset-bottom)); }
 .dock { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
 /* Model picker: one tap, right above the message box. */
-.picker { display: flex; gap: 2px; padding: 3px; background: var(--fill); border-radius: var(--radius-tile); }
+.picker { display: flex; gap: 4px; }
 .seg { flex: 1 1 0; min-width: 0; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px; border: 0; border-radius: calc(var(--radius-tile) - 3px); background: none; color: var(--muted); cursor: pointer; line-height: 1.2; }
 .seg b { font-size: 14px; font-weight: 600; }
 .seg small { font-size: 11px; opacity: .8; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.seg[aria-checked="true"] { background: var(--fill2); color: var(--text); }
+.seg[aria-checked="true"] { background: var(--fill); color: var(--text); }
 .seg.off { opacity: .6; } .seg.off b { font-weight: 500; } .seg.off[aria-checked="true"] { opacity: .75; }
 .composer { display: flex; gap: 8px; align-items: flex-end; }
 textarea { flex: 1; min-height: 44px; max-height: 160px; resize: none; font: inherit; color: var(--text); background: var(--fill); border: 1px solid var(--line); border-radius: 22px; padding: 10px 16px; outline: none; }
@@ -112,7 +121,7 @@ dialog#sheet::backdrop { background: color-mix(in srgb, var(--wz-base, Canvas) 7
 #sheet .bottom { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--wz-panel, Canvas) 14px); padding: 22px 0 max(12px, env(safe-area-inset-bottom)); margin-top: 6px; }
 #sheet .bottom .act { width: 100%; justify-content: center; }
 /* A diagnosed sign-in problem (#14): one step-by-step path, nothing else on screen. */
-body.diagnosed #scroll, body.diagnosed .composer, body.diagnosed footer, body.diagnosed #picker, body.diagnosed #pill { display: none !important; }
+body.diagnosed #scroll, body.diagnosed .composer, body.diagnosed footer, body.diagnosed #picker, body.diagnosed #pill, body.diagnosed #recheck { display: none !important; }
 body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-width: 620px; width: 100%; margin: 0 auto; }
 #reconnect h2 { font-size: 20px; line-height: 1.3; margin: 8px 0 12px; }
 #reconnect p { color: var(--muted); }
@@ -126,15 +135,14 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
 <header>
   <a class="back" id="back" href="/wizard-os-home/" aria-label="Back to Wizard">‹</a>
   <h1 hidden>Fix Wizard</h1>
-  <button class="pill statusline" id="pill" type="button" aria-label="Show system details"><span class="dot" id="pillDot"></span><span id="pillText">Checking Wizard…</span><span class="more">Details ›</span></button>
+  <button class="pill statusline" id="pill" type="button" aria-label="Show system details"><span class="dot" id="pillDot"></span><span id="pillText">Checking Wizard…</span><span class="more" aria-hidden="true">›</span></button>
+  <button class="recheck" id="recheck" type="button" aria-label="Check again" title="Check again"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
 </header>
 
 <div id="reconnect" class="signin" role="status" hidden></div>
 <div id="scroll"><div class="wrap">
   <section class="welcome" id="welcome">
-    <div class="big">What's wrong?</div>
-    <div class="sub">Tell me and I'll fix it, even when Wizard's normal chat is down.</div>
-    <div class="alert" id="alert" hidden><span class="dot bad"></span><span id="alertText"></span></div>
+    <h2 class="big">What's wrong?</h2>
     <div class="chips" id="chips">
       <button class="chip main" type="button" data-say="My Wizard is down, please fix it.">My Wizard is down</button>
       <button class="chip" type="button" data-say="My messages won't send in Wizard. Please fix it.">Messages won't send</button>
@@ -142,9 +150,8 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
       <button class="chip" type="button" data-say="Wizard is really slow. Please find out why and fix it.">Wizard is slow</button>
     </div>
     <div class="recent" id="recent" hidden>
-      <h2>Recent chats</h2>
+      <div class="head"><h2>Recent</h2><button class="all" id="allChats" type="button">See all</button></div>
       <div id="recentList"></div>
-      <button class="all" id="allChats" type="button">All chats</button>
     </div>
   </section>
   <div class="log" id="log"></div>
@@ -232,6 +239,11 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   // The window's Back (shell) closes the sheet first.
   try { WA?.back?.register?.({ canGoBack: () => sheetOpen(), back: () => { if (!sheetOpen()) return false; closeSheet(); return true; } }); } catch {}
   $('pill').addEventListener('click', openSheet);
+  $('recheck').addEventListener('click', async () => {
+    const b = $('recheck'); if (b.classList.contains('busy')) return;
+    b.classList.add('busy'); $('pillText').textContent = 'Checking Wizard…';
+    try { await refresh(true); } finally { setTimeout(() => b.classList.remove('busy'), 400); }
+  });
   $('closeSheet').addEventListener('click', closeSheet);
   $('sheet').addEventListener('click', e => {
     if (e.target !== $('sheet')) return;
@@ -291,11 +303,12 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
     lastStatus = s; actions = s.actions || actions;
     const bad = s.checks.filter(c => !c.ok && !c.skipped);
     $('pillDot').className = 'dot ' + (s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'warn' : 'bad');
+    const main = document.querySelector('.chip.main');
+    if (main) main.textContent = s.overall !== 'ok' && bad.length ? `Fix it: ${bad.length === 1 ? bad[0].label.replace(/^Your /, 'your ') : bad.length + ' problems'}` : 'My Wizard is down';
     $('pillText').textContent = s.overall === 'ok' ? 'Everything is working'
       : bad.length === 1 ? `${s.overall === 'degraded' ? 'Slow' : 'Something\'s wrong'}: ${bad[0].label.replace(/^Your /, 'your ')}`
       : `${bad.length} things need fixing`;
-    $('alert').hidden = s.overall === 'ok' || !bad.length;
-    if (bad.length) $('alertText').textContent = `I can already see a problem with ${bad[0].label.replace(/^Your /, 'your ')}: ${String(bad[0].detail || '').replace(/\.$/, '').toLowerCase()}. Tap below and I'll fix it.`;
+    document.body.classList.toggle('problem', s.overall !== 'ok' && bad.length > 0);
     $('checks').innerHTML = s.checks.map(c => `<div class="row"><span class="dot ${c.skipped ? '' : c.ok ? (c.slow ? 'warn' : 'ok') : 'bad'}"></span><div class="m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="d">${esc(c.detail)}</div>`}</div></div>`).join('');
     $('fixes').innerHTML = Object.entries(actions).map(([k, a]) => `<button class="act" type="button" data-act="${esc(k)}">${esc(a.label)}</button>`).join('');
     if (s.accounts) {
@@ -445,6 +458,10 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   $('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer:fine)').matches) { e.preventDefault(); say($('input').value); } });
 
   const pastRow = r => `<button class="past" type="button" data-conv="${esc(r.id)}">${esc(r.first || r.title)}<div class="small">${esc(when(r.updatedAt || r.createdAt))}${r.origin === 'guardian' ? ' · started automatically' : ''}</div></button>`;
+  // Recent: one line each, the question and a short date.
+  const day = iso => { const d = new Date(iso), n = new Date(); const y = new Date(n); y.setDate(n.getDate() - 1);
+    return d.toDateString() === n.toDateString() ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toDateString() === y.toDateString() ? 'Yesterday' : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
+  const recentRow = r => `<button class="past" type="button" data-conv="${esc(r.id)}"><span class="t">${esc(r.first || r.title)}</span><span class="small">${esc(day(r.updatedAt || r.createdAt))}</span></button>`;
   async function loadPast() {
     try {
       const { repairs } = await api('repairs?limit=20');
@@ -452,7 +469,7 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
       $('pastWrap').hidden = !others.length;
       $('past').innerHTML = others.map(pastRow).join('');
       $('recent').hidden = !others.length;
-      $('recentList').innerHTML = others.slice(0, 3).map(pastRow).join('');
+      $('recentList').innerHTML = others.slice(0, 3).map(recentRow).join('');
       $('allChats').hidden = others.length <= 3;
     } catch {}
   }
