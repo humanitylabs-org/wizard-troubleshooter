@@ -23,145 +23,145 @@
 html[data-color-scheme="light"] { --ok: var(--wz-success-light, green); --warn: var(--wz-warning-light, darkorange); }
 * { box-sizing: border-box; }
 html { background: var(--wz-base, Canvas); }
-html[data-wz-hosted], html:has(> body.hosted) { background: transparent; }
+html[data-wz-hosted], html:has(> body.ts-hosted) { background: transparent; }
 html, body { margin: 0; height: 100%; color: var(--text); font: var(--wz-font-size, 15px)/var(--wz-line-height, 1.4) var(--wz-font-ui, system-ui, sans-serif); }
 body { display: flex; flex-direction: column; height: 100dvh; background: transparent; }
 button { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 /* Inside a Wizard window the window's own title bar and Back handle navigation. */
-body.hosted a.back { display: none; }
-body.hosted header h1 { visibility: hidden; }
-body.hosted header { padding-top: 4px; padding-bottom: 0; }
-header { flex: none; display: flex; align-items: center; gap: 6px; padding: max(8px, env(safe-area-inset-top)) 12px 8px; }
+body.ts-hosted a.ts-back { display: none; }
+body.ts-hosted header h1 { visibility: hidden; }
+body.ts-hosted header { padding-top: 4px; padding-bottom: 0; }
+/* Same column as the content below, so the status row lines up with it on wide windows. */
+header { flex: none; display: flex; align-items: center; gap: 4px; padding: max(8px, env(safe-area-inset-top)) max(10px, calc((100% - 680px) / 2 + 10px)) 8px; }
 header h1 { font-size: 16px; font-weight: 600; margin: 0; flex: 1; }
-a.back { color: var(--text); text-decoration: none; font-size: 24px; line-height: 1; padding: 4px 8px 6px 2px; }
-.pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); background: none; border: 0; padding: 8px 4px 8px 8px; cursor: pointer; max-width: 60vw; }
-.pill span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.ts-back { color: var(--text); text-decoration: none; font-size: 24px; line-height: 1; padding: 4px 8px 6px 2px; }
+.ts-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); background: none; border: 0; padding: 8px 4px 8px 8px; cursor: pointer; max-width: 60vw; }
+.ts-pill span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Status line: one plain sentence about Wizard, details on tap. */
-.statusline { flex: 1; max-width: none; min-height: 44px; font-size: 15px; font-weight: 500; color: var(--text); padding: 8px 4px; text-align: left; }
-.statusline #pillText { flex: 1 1 auto; min-width: 0; }
-.statusline .more { flex: none; font-size: 18px; line-height: 1; color: var(--muted); }
+.ts-statusline { flex: 1; max-width: none; min-height: 44px; font-size: 15px; font-weight: 500; color: var(--text); padding: 8px 4px; text-align: left; }
+.ts-statusline #pillText { flex: 0 1 auto; min-width: 0; }
+.ts-statusline .ts-more { flex: none; font-size: 18px; line-height: 1; color: var(--muted); }
 /* Check again: one quiet icon button; it turns while checking. */
-.recheck { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
-.recheck:hover { background: var(--fill); color: var(--text); }
-.recheck svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.recheck.busy svg { animation: s .9s linear infinite; }
-body.hosted header h1 { display: none; }
+.ts-recheck { flex: none; min-height: 44px; padding: 0 10px; border: 0; border-radius: var(--radius-tile); background: none; color: var(--muted); font-size: 13px; cursor: pointer; }
+.ts-recheck:hover { background: var(--fill); color: var(--text); }
+.ts-recheck.ts-busy { opacity: .6; cursor: progress; }
+body.ts-hosted header h1 { display: none; }
 /* Recent repair chats, right under the one-tap buttons. */
-.recent { margin-top: 28px; }
-.recent .head { display: flex; align-items: center; justify-content: space-between; }
-.recent h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0; }
-.recent .all { background: none; border: 0; padding: 0 4px; min-height: 44px; color: var(--muted); font-size: 13px; cursor: pointer; }
-.recent .all:hover { color: var(--text); }
-#recentList .past { display: flex; align-items: baseline; gap: 12px; min-height: 44px; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
-#recentList .past:first-child { border-top: 0; }
-#recentList .past .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#recentList .past .small { flex: none; }
-.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
-.dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+.ts-recent { margin-top: 28px; }
+.ts-recent .ts-head { display: flex; align-items: center; justify-content: space-between; }
+.ts-recent h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0; }
+.ts-recent .ts-all { background: none; border: 0; padding: 0 4px; min-height: 44px; color: var(--muted); font-size: 13px; cursor: pointer; }
+.ts-recent .ts-all:hover { color: var(--text); }
+#recentList .ts-past { display: flex; align-items: baseline; gap: 12px; min-height: 44px; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+#recentList .ts-past:first-child { border-top: 0; }
+#recentList .ts-past .ts-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#recentList .ts-past .ts-small { flex: none; }
+.ts-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
+.ts-dot.ts-ok { background: var(--ok); } .ts-dot.ts-bad { background: var(--bad); } .ts-dot.ts-warn { background: var(--warn); }
 #scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-.wrap { max-width: 680px; margin: 0 auto; padding: 8px 16px 16px; min-height: 100%; display: flex; flex-direction: column; }
-.welcome { padding: 20px 0 8px; }
-.welcome .big { font-size: 22px; font-weight: 600; margin: 0; }
+.ts-wrap { max-width: 680px; margin: 0 auto; padding: 8px 16px 16px; min-height: 100%; display: flex; flex-direction: column; }
+.ts-welcome { padding: 20px 0 8px; }
+.ts-welcome .ts-big { font-size: 22px; font-weight: 600; margin: 0; }
 /* The one-tap buttons. */
-.chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-top: 16px; }
-.chip { text-align: left; background: var(--fill); border: 0; border-radius: var(--radius-tile); padding: 12px 14px; min-height: 48px; cursor: pointer; }
-.chip:hover { background: var(--fill2); }
+.ts-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-top: 16px; }
+.ts-chip { text-align: left; background: var(--fill); border: 0; border-radius: var(--radius-tile); padding: 12px 14px; min-height: 48px; cursor: pointer; }
+.ts-chip:hover { background: var(--fill2); }
 /* Only a real problem gets the accent: the first button then names what's wrong. */
-body.problem .chip.main { background: var(--accent); color: var(--on-accent); font-weight: 600; grid-column: 1 / -1; }
-.log { display: flex; flex-direction: column; gap: 14px; }
-.log:empty { display: none; }
-.msg { white-space: pre-wrap; overflow-wrap: anywhere; }
-.msg.owner { align-self: flex-end; max-width: 85%; background: var(--fill2); padding: 9px 13px; border-radius: 16px 16px 4px 16px; }
-.msg.agent { align-self: stretch; }
-.msg.agent code { background: var(--fill); padding: 1px 5px; border-radius: 5px; font-size: 14px; font-family: var(--wz-font-mono, ui-monospace, monospace); }
-.msg .who { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
-.signin, .note { font-size: 14px; color: var(--muted); }
-.signin { display: flex; flex-direction: column; gap: 8px; color: var(--text); }
-.signin pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; margin: 0; padding: 10px; background: var(--fill); border-radius: var(--radius-tile); font: 13px/1.4 var(--wz-font-mono, ui-monospace, monospace); }
-.signin .acts { display: flex; gap: 8px; flex-wrap: wrap; }
-.act { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: var(--radius-tile); border: 1px solid var(--line); background: var(--fill); color: var(--text); text-decoration: none; cursor: pointer; font-size: 14px; }
-.act.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
-.working { font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
-.working .step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.spin { width: 13px; height: 13px; flex: none; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: s .9s linear infinite; }
+body.ts-problem .ts-chip.ts-main { background: var(--accent); color: var(--on-accent); font-weight: 600; grid-column: 1 / -1; }
+.ts-log { display: flex; flex-direction: column; gap: 14px; }
+.ts-log:empty { display: none; }
+.ts-msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ts-msg.ts-owner { align-self: flex-end; max-width: 85%; background: var(--fill2); padding: 9px 13px; border-radius: 16px 16px 4px 16px; }
+.ts-msg.ts-agent { align-self: stretch; }
+.ts-msg.ts-agent code { background: var(--fill); padding: 1px 5px; border-radius: 5px; font-size: 14px; font-family: var(--wz-font-mono, ui-monospace, monospace); }
+.ts-msg .ts-who { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.ts-signin, .ts-note { font-size: 14px; color: var(--muted); }
+.ts-signin { display: flex; flex-direction: column; gap: 8px; color: var(--text); }
+.ts-signin pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; margin: 0; padding: 10px; background: var(--fill); border-radius: var(--radius-tile); font: 13px/1.4 var(--wz-font-mono, ui-monospace, monospace); }
+.ts-signin .ts-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.ts-act { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: var(--radius-tile); border: 1px solid var(--line); background: var(--fill); color: var(--text); text-decoration: none; cursor: pointer; font-size: 14px; }
+.ts-act.ts-primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+.ts-working { font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.ts-working .ts-step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-spin { width: 13px; height: 13px; flex: none; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: s .9s linear infinite; }
 @keyframes s { to { transform: rotate(360deg); } }
-.after { display: flex; gap: 6px; flex-wrap: wrap; }
-.after .chip { padding: 8px 12px; font-size: 14px; min-height: 40px; }
+.ts-after { display: flex; gap: 6px; flex-wrap: wrap; }
+.ts-after .ts-chip { padding: 8px 12px; font-size: 14px; min-height: 40px; }
 footer { flex: none; padding: 4px 16px max(12px, env(safe-area-inset-bottom)); }
-.dock { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.ts-dock { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
 /* Model picker: one tap, right above the message box. */
-.picker { display: flex; gap: 4px; }
-.seg { flex: 1 1 0; min-width: 0; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px; border: 0; border-radius: calc(var(--radius-tile) - 3px); background: none; color: var(--muted); cursor: pointer; line-height: 1.2; }
-.seg b { font-size: 14px; font-weight: 600; }
-.seg small { font-size: 11px; opacity: .8; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.seg[aria-checked="true"] { background: var(--fill); color: var(--text); }
-.seg.off { opacity: .6; } .seg.off b { font-weight: 500; } .seg.off[aria-checked="true"] { opacity: .75; }
-.composer { display: flex; gap: 8px; align-items: flex-end; }
+.ts-picker { display: flex; gap: 4px; }
+.ts-seg { flex: 1 1 0; min-width: 0; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px; border: 0; border-radius: calc(var(--radius-tile) - 3px); background: none; color: var(--muted); cursor: pointer; line-height: 1.2; }
+.ts-seg b { font-size: 14px; font-weight: 600; }
+.ts-seg small { font-size: 11px; opacity: .8; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-seg[aria-checked="true"] { background: var(--fill); color: var(--text); }
+.ts-seg.ts-off { opacity: .6; } .ts-seg.ts-off b { font-weight: 500; } .ts-seg.ts-off[aria-checked="true"] { opacity: .75; }
+.ts-composer { display: flex; gap: 8px; align-items: flex-end; }
 textarea { flex: 1; min-height: 44px; max-height: 160px; resize: none; font: inherit; color: var(--text); background: var(--fill); border: 1px solid var(--line); border-radius: 22px; padding: 10px 16px; outline: none; }
 textarea::placeholder { color: var(--muted); }
 textarea:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
-button.send { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); font-size: 19px; font-weight: 700; cursor: pointer; }
-button.send.stop { background: var(--fill2); color: var(--text); font-size: 14px; }
+button.ts-send { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); font-size: 19px; font-weight: 700; cursor: pointer; }
+button.ts-send.ts-stop { background: var(--fill2); color: var(--text); font-size: 14px; }
 button:disabled { opacity: .5; cursor: default; }
 /* Details: the one pop-up, a native dialog in the shared sheet's look. */
 dialog#sheet { color: var(--text); background: var(--wz-panel, Canvas); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 16px 0; width: min(560px, calc(100% - 24px)); max-width: none; max-height: 85%; overflow-y: auto; }
 dialog#sheet::backdrop { background: color-mix(in srgb, var(--wz-base, Canvas) 70%, transparent); }
 @media (max-width: 599px) { dialog#sheet { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 22px 22px 0 0; border-bottom: 0; max-height: 88%; } }
 #sheet h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 18px 0 2px; }
-.row { display: flex; gap: 10px; padding: 7px 0; align-items: flex-start; font-size: 14px; }
-.row .dot { margin-top: 7px; } .row .m { flex: 1; min-width: 0; }
-.row .d { color: var(--muted); overflow-wrap: anywhere; }
-.row a { color: var(--text); font-size: 13px; white-space: nowrap; padding-top: 1px; }
-.fixes { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
-.fixmsg { font-size: 13px; color: var(--muted); padding-top: 6px; overflow-wrap: anywhere; }
-.fixmsg:empty { display: none; }
-.past { display: block; width: 100%; text-align: left; font-size: 14px; background: none; border: 0; padding: 7px 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.small { font-size: 12px; color: var(--muted); }
-#sheet .bottom { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--wz-panel, Canvas) 14px); padding: 22px 0 max(12px, env(safe-area-inset-bottom)); margin-top: 6px; }
-#sheet .bottom .act { width: 100%; justify-content: center; }
+.ts-row { display: flex; gap: 10px; padding: 7px 0; align-items: flex-start; font-size: 14px; }
+.ts-row .ts-dot { margin-top: 7px; } .ts-row .ts-m { flex: 1; min-width: 0; }
+.ts-row .ts-d { color: var(--muted); overflow-wrap: anywhere; }
+.ts-row a { color: var(--text); font-size: 13px; white-space: nowrap; padding-top: 1px; }
+.ts-fixes { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
+.ts-fixmsg { font-size: 13px; color: var(--muted); padding-top: 6px; overflow-wrap: anywhere; }
+.ts-fixmsg:empty { display: none; }
+.ts-past { display: block; width: 100%; text-align: left; font-size: 14px; background: none; border: 0; padding: 7px 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-small { font-size: 12px; color: var(--muted); }
+#sheet .ts-bottom { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--wz-panel, Canvas) 14px); padding: 22px 0 max(12px, env(safe-area-inset-bottom)); margin-top: 6px; }
+#sheet .ts-bottom .ts-act { width: 100%; justify-content: center; }
 /* A diagnosed sign-in problem (#14): one step-by-step path, nothing else on screen. */
-body.diagnosed #scroll, body.diagnosed .composer, body.diagnosed footer, body.diagnosed #picker, body.diagnosed #pill, body.diagnosed #recheck { display: none !important; }
-body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-width: 620px; width: 100%; margin: 0 auto; }
+body.ts-diagnosed #scroll, body.ts-diagnosed .ts-composer, body.ts-diagnosed footer, body.ts-diagnosed #picker, body.ts-diagnosed #pill, body.ts-diagnosed #recheck { display: none !important; }
+body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-width: 620px; width: 100%; margin: 0 auto; }
 #reconnect h2 { font-size: 20px; line-height: 1.3; margin: 8px 0 12px; }
 #reconnect p { color: var(--muted); }
 #reconnect ol { padding-left: 3ch; margin: 18px 0; }
 #reconnect li { margin: 0 0 10px; }
-#reconnect .act { display: flex; justify-content: center; width: 100%; min-height: 48px; background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
-#reconnect .something { display: block; margin: 24px auto 0; padding: 8px; background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; }
+#reconnect .ts-act { display: flex; justify-content: center; width: 100%; min-height: 48px; background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+#reconnect .ts-something { display: block; margin: 24px auto 0; padding: 8px; background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; }
 </style>
 </head>
 <body>
 <header>
-  <a class="back" id="back" href="/wizard-os-home/" aria-label="Back to Wizard">‹</a>
+  <a class="ts-back" id="back" href="/wizard-os-home/" aria-label="Back to Wizard">‹</a>
   <h1 hidden>Fix Wizard</h1>
-  <button class="pill statusline" id="pill" type="button" aria-label="Show system details"><span class="dot" id="pillDot"></span><span id="pillText">Checking Wizard…</span><span class="more" aria-hidden="true">›</span></button>
-  <button class="recheck" id="recheck" type="button" aria-label="Check again" title="Check again"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
+  <button class="ts-pill ts-statusline" id="pill" type="button" aria-label="Show system details"><span class="ts-dot" id="pillDot"></span><span id="pillText">Checking Wizard…</span><span class="ts-more" aria-hidden="true">›</span></button>
+  <button class="ts-recheck" id="recheck" type="button">Check again</button>
 </header>
 
-<div id="reconnect" class="signin" role="status" hidden></div>
-<div id="scroll"><div class="wrap">
-  <section class="welcome" id="welcome">
-    <h2 class="big">What's wrong?</h2>
-    <div class="chips" id="chips">
-      <button class="chip main" type="button" data-say="My Wizard is down, please fix it.">My Wizard is down</button>
-      <button class="chip" type="button" data-say="My messages won't send in Wizard. Please fix it.">Messages won't send</button>
-      <button class="chip" type="button" data-say="My agent isn't replying in Wizard. Please fix it.">My agent isn't replying</button>
-      <button class="chip" type="button" data-say="Wizard is really slow. Please find out why and fix it.">Wizard is slow</button>
+<div id="reconnect" class="ts-signin" role="status" hidden></div>
+<div id="scroll"><div class="ts-wrap">
+  <section class="ts-welcome" id="welcome">
+    <h2 class="ts-big">What's wrong?</h2>
+    <div class="ts-chips" id="chips">
+      <button class="ts-chip ts-main" type="button" data-say="My Wizard is down, please fix it.">My Wizard is down</button>
+      <button class="ts-chip" type="button" data-say="My messages won't send in Wizard. Please fix it.">Messages won't send</button>
+      <button class="ts-chip" type="button" data-say="My agent isn't replying in Wizard. Please fix it.">My agent isn't replying</button>
+      <button class="ts-chip" type="button" data-say="Wizard is really slow. Please find out why and fix it.">Wizard is slow</button>
     </div>
-    <div class="recent" id="recent" hidden>
-      <div class="head"><h2>Recent</h2><button class="all" id="allChats" type="button">See all</button></div>
+    <div class="ts-recent" id="recent" hidden>
+      <div class="ts-head"><h2>Recent</h2><button class="ts-all" id="allChats" type="button">See all</button></div>
       <div id="recentList"></div>
     </div>
   </section>
-  <div class="log" id="log"></div>
+  <div class="ts-log" id="log"></div>
 </div></div>
 
-<footer><div class="dock">
-  <div class="picker" id="picker" role="radiogroup" aria-label="Who answers"></div>
-  <div class="composer">
+<footer><div class="ts-dock">
+  <div class="ts-picker" id="picker" role="radiogroup" aria-label="Who answers"></div>
+  <div class="ts-composer">
     <textarea id="input" rows="1" placeholder="Describe the problem…" aria-label="Message"></textarea>
-    <button class="send" id="send" type="button" aria-label="Send">↑</button>
+    <button class="ts-send" id="send" type="button" aria-label="Send">↑</button>
   </div>
 </div></footer>
 
@@ -171,11 +171,11 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   <h2>Sign-ins</h2>
   <div id="acct"></div>
   <h2>Manual fixes</h2>
-  <div class="fixes" id="fixes"></div>
-  <div class="fixmsg" id="fixMsg" role="status"></div>
+  <div class="ts-fixes" id="fixes"></div>
+  <div class="ts-fixmsg" id="fixMsg" role="status"></div>
   <div id="pastWrap" hidden><h2>All repair chats</h2><div id="past"></div></div>
   <div id="incWrap" hidden><h2>Recently</h2><div id="incidents"></div></div>
-  <div class="bottom"><button class="act" id="closeSheet" type="button">Done</button></div>
+  <div class="ts-bottom"><button class="ts-act" id="closeSheet" type="button">Done</button></div>
 </dialog>
 
 <script src="/wizard-os-home/core/app-client.js"></script>
@@ -194,14 +194,14 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
     return `<a${cls ? ` class="${cls}"` : ''} href="${esc(a.open)}" data-openapp="${esc(a.installed === false ? '' : a.appId || '')}"${other ? ' target="_blank" rel="noopener"' : ''}>${esc(label)}</a>`;
   };
   const CACHE = 'wizard-troubleshoot-engines'; // last known picker, painted instantly; the server holds the real choice
-  if (window.self !== window.top) document.body.classList.add('hosted');
+  if (window.self !== window.top) document.body.classList.add('ts-hosted');
   try { WA?.ready?.({ name: 'Troubleshooter' }); } catch {}
 
   // Model picker: every provider, its real model in quieter text, the owner's choice saved on the server.
   let engines = [], selected = null;
   function paintPicker() {
     $('picker').hidden = !engines.length;
-    $('picker').innerHTML = engines.map(a => `<button class="seg${a.ok ? '' : ' off'}" type="button" role="radio" data-engine="${esc(a.engine)}" aria-checked="${a.engine === selected}"${a.ok ? '' : ' aria-disabled="true"'} title="${esc(a.ok ? a.name + (a.modelLabel ? ' · ' + a.modelLabel : '') : a.reason)}"><b>${esc(a.name)}</b><small>${esc(a.ok ? (a.modelLabel || 'Ready') : a.reason)}</small></button>`).join('');
+    $('picker').innerHTML = engines.map(a => `<button class="ts-seg${a.ok ? '' : ' ts-off'}" type="button" role="radio" data-engine="${esc(a.engine)}" aria-checked="${a.engine === selected}"${a.ok ? '' : ' aria-disabled="true"'} title="${esc(a.ok ? a.name + (a.modelLabel ? ' · ' + a.modelLabel : '') : a.reason)}"><b>${esc(a.name)}</b><small>${esc(a.ok ? (a.modelLabel || 'Ready') : a.reason)}</small></button>`).join('');
   }
   function setEngines(list, sel) {
     engines = list || []; selected = sel || selected || engines.find(a => a.ok)?.engine || 'claude';
@@ -240,9 +240,9 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   try { WA?.back?.register?.({ canGoBack: () => sheetOpen(), back: () => { if (!sheetOpen()) return false; closeSheet(); return true; } }); } catch {}
   $('pill').addEventListener('click', openSheet);
   $('recheck').addEventListener('click', async () => {
-    const b = $('recheck'); if (b.classList.contains('busy')) return;
-    b.classList.add('busy'); $('pillText').textContent = 'Checking Wizard…';
-    try { await refresh(true); } finally { setTimeout(() => b.classList.remove('busy'), 400); }
+    const b = $('recheck'); if (b.classList.contains('ts-busy')) return;
+    b.classList.add('ts-busy'); b.textContent = 'Checking…'; $('pillText').textContent = 'Checking Wizard…';
+    try { await refresh(true); } finally { setTimeout(() => { b.classList.remove('ts-busy'); b.textContent = 'Check again'; }, 400); }
   });
   $('closeSheet').addEventListener('click', closeSheet);
   $('sheet').addEventListener('click', e => {
@@ -276,13 +276,13 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   function paintReconnect(a) {
     if (a && ['claude', 'chatgpt'].includes(a.engine)) diagnosed = a;
     const focused = diagnosed && !otherProblem;
-    document.body.classList.toggle('diagnosed', !!focused);
+    document.body.classList.toggle('ts-diagnosed', !!focused);
     $('reconnect').hidden = !focused;
     if (!focused) return;
     const name = NAMES[diagnosed.engine];
     const html = recoverySent
-      ? `<h2>${esc(name)} is signed in again. Your message was sent.</h2><button type="button" class="act" data-back-chat>Back to chat</button>`
-      : `<h2>${esc(name)}'s sign-in has expired</h2><p>Your Wizard can't send messages to ${esc(name)} until you sign in again.</p><ol><li>Tap Sign in to ${esc(name)}.</li><li>Sign in on the page that opens.</li><li>Come back here. Your waiting message sends on its own.</li></ol>${appLink(diagnosed, `Sign in to ${name}`, 'act')}<button type="button" class="something" data-other-problem>Something else is wrong</button>`;
+      ? `<h2>${esc(name)} is signed in again. Your message was sent.</h2><button type="button" class="ts-act" data-back-chat>Back to chat</button>`
+      : `<h2>${esc(name)}'s sign-in has expired</h2><p>Your Wizard can't send messages to ${esc(name)} until you sign in again.</p><ol><li>Tap Sign in to ${esc(name)}.</li><li>Sign in on the page that opens.</li><li>Come back here. Your waiting message sends on its own.</li></ol>${appLink(diagnosed, `Sign in to ${name}`, 'ts-act')}<button type="button" class="ts-something" data-other-problem>Something else is wrong</button>`;
     if (html !== recoveryMarkup) { recoveryMarkup = html; $('reconnect').innerHTML = html; }
   }
   async function pollRecovery() {
@@ -302,18 +302,18 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   function paintStatus(s) {
     lastStatus = s; actions = s.actions || actions;
     const bad = s.checks.filter(c => !c.ok && !c.skipped);
-    $('pillDot').className = 'dot ' + (s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'warn' : 'bad');
-    const main = document.querySelector('.chip.main');
+    $('pillDot').className = 'ts-dot ts-' + (s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'warn' : 'bad');
+    const main = document.querySelector('.ts-chip.ts-main');
     if (main) main.textContent = s.overall !== 'ok' && bad.length ? `Fix it: ${bad.length === 1 ? bad[0].label.replace(/^Your /, 'your ') : bad.length + ' problems'}` : 'My Wizard is down';
     $('pillText').textContent = s.overall === 'ok' ? 'Everything is working'
       : bad.length === 1 ? `${s.overall === 'degraded' ? 'Slow' : 'Something\'s wrong'}: ${bad[0].label.replace(/^Your /, 'your ')}`
       : `${bad.length} things need fixing`;
-    document.body.classList.toggle('problem', s.overall !== 'ok' && bad.length > 0);
-    $('checks').innerHTML = s.checks.map(c => `<div class="row"><span class="dot ${c.skipped ? '' : c.ok ? (c.slow ? 'warn' : 'ok') : 'bad'}"></span><div class="m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="d">${esc(c.detail)}</div>`}</div></div>`).join('');
-    $('fixes').innerHTML = Object.entries(actions).map(([k, a]) => `<button class="act" type="button" data-act="${esc(k)}">${esc(a.label)}</button>`).join('');
+    document.body.classList.toggle('ts-problem', s.overall !== 'ok' && bad.length > 0);
+    $('checks').innerHTML = s.checks.map(c => `<div class="ts-row"><span class="ts-dot ${c.skipped ? '' : c.ok ? (c.slow ? 'ts-warn' : 'ts-ok') : 'ts-bad'}"></span><div class="ts-m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="ts-d">${esc(c.detail)}</div>`}</div></div>`).join('');
+    $('fixes').innerHTML = Object.entries(actions).map(([k, a]) => `<button class="ts-act" type="button" data-act="${esc(k)}">${esc(a.label)}</button>`).join('');
     if (s.accounts) {
       setEngines(s.accounts, s.engine);
-      $('acct').innerHTML = s.accounts.map(a => `<div class="row"><span class="dot ${a.ok ? 'ok' : 'bad'}"></span><div class="m">${esc(a.app)}<div class="d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok || !a.open ? '' : appLink(a, a.installed === false ? 'Get app' : 'Sign in', '')}</div>`).join('');
+      $('acct').innerHTML = s.accounts.map(a => `<div class="ts-row"><span class="ts-dot ${a.ok ? 'ts-ok' : 'ts-bad'}"></span><div class="ts-m">${esc(a.app)}<div class="ts-d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok || !a.open ? '' : appLink(a, a.installed === false ? 'Get app' : 'Sign in', '')}</div>`).join('');
     }
     paintReconnect(s.reconnect);
     if (s.repair && !current) openConv(s.repair.convId);
@@ -326,7 +326,7 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
     // /verify? rather than /verify, so ordinary page arrival must use /status.
     const route = 'status' + (query.size ? '?' + query : '');
     try { paintStatus(await api(route)); if (!accounts && !running) loadEngines(); }
-    catch { $('pillDot').className = 'dot bad'; $('pillText').textContent = 'Can\'t check Wizard right now'; }
+    catch { $('pillDot').className = 'ts-dot ts-bad'; $('pillText').textContent = 'Can\'t check Wizard right now'; }
   }
   async function loadIncidents() {
     try {
@@ -335,7 +335,7 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
       const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result'].includes(i.kind) && (i.text || i.detail))
         .filter(i => { const k = (i.text || i.detail) + when(i.at); return !seen.has(k) && seen.add(k); }).slice(0, 8);
       $('incWrap').hidden = !shown.length;
-      if (shown.length) $('incidents').innerHTML = shown.map(i => `<div class="row"><span class="dot ${i.ok === false || i.kind === 'outage' ? 'bad' : 'ok'}"></span><div class="m"><div class="d">${esc(i.text || i.detail)}</div><div class="small">${esc(when(i.at))}</div></div></div>`).join('');
+      if (shown.length) $('incidents').innerHTML = shown.map(i => `<div class="ts-row"><span class="ts-dot ${i.ok === false || i.kind === 'outage' ? 'ts-bad' : 'ts-ok'}"></span><div class="ts-m"><div class="ts-d">${esc(i.text || i.detail)}</div><div class="ts-small">${esc(when(i.at))}</div></div></div>`).join('');
     } catch {}
   }
   // Manual fixes: tap once to arm, tap again to run (no browser pop-ups). The result shows under the buttons.
@@ -344,11 +344,11 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
     const b = e.target.closest('[data-act]'); if (!b) return;
     const a = actions[b.dataset.act] || {};
     if (armed !== b) {
-      if (armed) { armed.textContent = armed.dataset.label; armed.classList.remove('primary'); }
-      armed = b; b.dataset.label = b.textContent; b.textContent = `Tap again: ${a.label}`; b.classList.add('primary');
+      if (armed) { armed.textContent = armed.dataset.label; armed.classList.remove('ts-primary'); }
+      armed = b; b.dataset.label = b.textContent; b.textContent = `Tap again: ${a.label}`; b.classList.add('ts-primary');
       $('fixMsg').textContent = a.warn || ''; return;
     }
-    armed = null; b.classList.remove('primary');
+    armed = null; b.classList.remove('ts-primary');
     b.disabled = true; b.textContent = 'Working…'; $('fixMsg').textContent = '';
     try { const r = await api('action', { method: 'POST', headers: H, body: JSON.stringify({ action: b.dataset.act }) }); paintStatus(r.status); $('fixMsg').textContent = r.detail || 'Done.'; }
     catch (err) { $('fixMsg').textContent = err.message; }
@@ -360,51 +360,51 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   const log = $('log'), scroller = $('scroll');
   const toBottom = () => requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
   function workingRow() {
-    let w = log.querySelector('.working');
-    if (!w) { w = document.createElement('div'); w.className = 'working'; w.innerHTML = '<span class="spin"></span><span class="step">Looking into it…</span>'; }
+    let w = log.querySelector('.ts-working');
+    if (!w) { w = document.createElement('div'); w.className = 'ts-working'; w.innerHTML = '<span class="ts-spin"></span><span class="ts-step">Looking into it…</span>'; }
     log.appendChild(w); return w;
   }
   function paintEvent(ev) {
     $('welcome').hidden = true;
     if (ev.type === 'approval-result') {
       const row = log.querySelector(`[data-approval-row="${ev.approvalId}"]`);
-      if (row) { row.querySelectorAll('button').forEach(b => b.disabled = true); row.querySelector('.approval-state').textContent = ev.approved ? 'Approved' : 'Denied or expired'; }
+      if (row) { row.querySelectorAll('button').forEach(b => b.disabled = true); row.querySelector('.ts-approval-state').textContent = ev.approved ? 'Approved' : 'Denied or expired'; }
       return;
     }
     if (ev.type === 'approval') {
-      const d = document.createElement('div'); d.className = 'signin'; d.dataset.approvalRow = ev.approvalId;
-      d.innerHTML = `<strong class="approval-state">Owner approval required</strong><pre>${esc(ev.text)}</pre><div class="acts"><button class="act primary" data-approval="${esc(ev.approvalId)}" data-approved="true">Approve this exact action</button><button class="act" data-approval="${esc(ev.approvalId)}" data-approved="false">Deny</button></div>`;
-      log.insertBefore(d, log.querySelector('.working')); return toBottom();
+      const d = document.createElement('div'); d.className = 'ts-signin'; d.dataset.approvalRow = ev.approvalId;
+      d.innerHTML = `<strong class="ts-approval-state">Owner approval required</strong><pre>${esc(ev.text)}</pre><div class="ts-acts"><button class="ts-act ts-primary" data-approval="${esc(ev.approvalId)}" data-approved="true">Approve this exact action</button><button class="ts-act" data-approval="${esc(ev.approvalId)}" data-approved="false">Deny</button></div>`;
+      log.insertBefore(d, log.querySelector('.ts-working')); return toBottom();
     }
     if (ev.type === 'signin') {
-      const d = document.createElement('div'); d.className = 'signin';
-      const offer = ev.offer && NAMES[ev.offer] ? `<button class="act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button>` : '';
-      d.innerHTML = `<span>${esc(ev.text)}</span><div class="acts">${ev.open ? appLink(ev, ev.installed === false ? `Get the ${ev.app}` : `Open ${ev.app}`, 'act') : ''}${offer}</div>`;
-      log.insertBefore(d, log.querySelector('.working')); return toBottom();
+      const d = document.createElement('div'); d.className = 'ts-signin';
+      const offer = ev.offer && NAMES[ev.offer] ? `<button class="ts-act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button>` : '';
+      d.innerHTML = `<span>${esc(ev.text)}</span><div class="ts-acts">${ev.open ? appLink(ev, ev.installed === false ? `Get the ${ev.app}` : `Open ${ev.app}`, 'ts-act') : ''}${offer}</div>`;
+      log.insertBefore(d, log.querySelector('.ts-working')); return toBottom();
     }
     if (ev.type === 'tool' || ev.type === 'status') {
-      workingRow().querySelector('.step').textContent = ev.type === 'tool' ? 'Checking: ' + ev.text.replace(/^(Bash|Shell): /, '') : ev.text;
+      workingRow().querySelector('.ts-step').textContent = ev.type === 'tool' ? 'Checking: ' + ev.text.replace(/^(Bash|Shell): /, '') : ev.text;
       return toBottom();
     }
     const d = document.createElement('div');
-    if (ev.type === 'text') { d.className = 'msg ' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="who">${esc(NAMES[ev.engine] || 'Claude')}${ev.modelLabel ? ' · ' + esc(ev.modelLabel) : ''}</div>${md(ev.text)}` : esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
+    if (ev.type === 'text') { d.className = 'ts-msg ts-' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="ts-who">${esc(NAMES[ev.engine] || 'Claude')}${ev.modelLabel ? ' · ' + esc(ev.modelLabel) : ''}</div>${md(ev.text)}` : esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
     else if (ev.type === 'note') {
-      d.className = 'note'; d.textContent = ev.text;
-      if (ev.offer && NAMES[ev.offer]) { d.className = 'signin'; d.innerHTML = `<span>${esc(ev.text)}</span><div class="acts"><button class="act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button></div>`; }
+      d.className = 'ts-note'; d.textContent = ev.text;
+      if (ev.offer && NAMES[ev.offer]) { d.className = 'ts-signin'; d.innerHTML = `<span>${esc(ev.text)}</span><div class="ts-acts"><button class="ts-act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button></div>`; }
     }
     else return;
-    log.insertBefore(d, log.querySelector('.working')); toBottom();
+    log.insertBefore(d, log.querySelector('.ts-working')); toBottom();
   }
   function setRunning(on) {
     running = on;
-    $('send').classList.toggle('stop', on); $('send').textContent = on ? '■' : '↑'; $('send').setAttribute('aria-label', on ? 'Stop' : 'Send');
-    log.querySelector('.after')?.remove();
+    $('send').classList.toggle('ts-stop', on); $('send').textContent = on ? '■' : '↑'; $('send').setAttribute('aria-label', on ? 'Stop' : 'Send');
+    log.querySelector('.ts-after')?.remove();
     if (on) { workingRow(); return toBottom(); }
-    log.querySelector('.working')?.remove();
-    log.querySelectorAll('[data-approval-row]').forEach(row => { row.querySelectorAll('button').forEach(b => b.disabled = true); if (row.querySelector('.approval-state').textContent === 'Owner approval required') row.querySelector('.approval-state').textContent = 'Expired'; });
+    log.querySelector('.ts-working')?.remove();
+    log.querySelectorAll('[data-approval-row]').forEach(row => { row.querySelectorAll('button').forEach(b => b.disabled = true); if (row.querySelector('.ts-approval-state').textContent === 'Owner approval required') row.querySelector('.ts-approval-state').textContent = 'Expired'; });
     if (current && log.children.length) {
-      const a = document.createElement('div'); a.className = 'after';
-      a.innerHTML = '<button class="chip" type="button" data-say="Thanks, it works now.">It works now</button><button class="chip" type="button" data-say="It\'s still not working.">Still not working</button><button class="chip" type="button" data-new="1">Something else</button>';
+      const a = document.createElement('div'); a.className = 'ts-after';
+      a.innerHTML = '<button class="ts-chip" type="button" data-say="Thanks, it works now.">It works now</button><button class="ts-chip" type="button" data-say="It\'s still not working.">Still not working</button><button class="ts-chip" type="button" data-new="1">Something else</button>';
       log.appendChild(a); toBottom();
     }
   }
@@ -439,7 +439,7 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
     const approval = e.target.closest('[data-approval]');
     if (approval) {
       const row = approval.closest('[data-approval-row]'); row.querySelectorAll('button').forEach(b => b.disabled = true);
-      api('repair/approve', { method: 'POST', headers: H, body: JSON.stringify({ id: current, approvalId: approval.dataset.approval, approved: approval.dataset.approved === 'true' }) }).catch(err => { row.querySelector('.approval-state').textContent = err.message; }); return;
+      api('repair/approve', { method: 'POST', headers: H, body: JSON.stringify({ id: current, approvalId: approval.dataset.approval, approved: approval.dataset.approved === 'true' }) }).catch(err => { row.querySelector('.ts-approval-state').textContent = err.message; }); return;
     }
     // Inside the Wizard shell, open the connection app in its own window; on the bare page follow the link.
     const o = e.target.closest('[data-openapp]');
@@ -447,7 +447,7 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
     const c = e.target.closest('[data-say]'); if (c) return say(c.dataset.say);
     const rt = e.target.closest('[data-retry]');
     if (rt) { // the picked engine couldn't answer: switch to the offered one and ask the same question again
-      const last = [...log.querySelectorAll('.msg.owner')].at(-1)?.textContent || '';
+      const last = [...log.querySelectorAll('.ts-msg.ts-owner')].at(-1)?.textContent || '';
       rt.disabled = true; pick(rt.dataset.retry).then(() => say(last)); return;
     }
     if (e.target.closest('[data-new]')) newChat();
@@ -457,11 +457,11 @@ body.diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-wid
   $('input').addEventListener('input', autosize);
   $('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer:fine)').matches) { e.preventDefault(); say($('input').value); } });
 
-  const pastRow = r => `<button class="past" type="button" data-conv="${esc(r.id)}">${esc(r.first || r.title)}<div class="small">${esc(when(r.updatedAt || r.createdAt))}${r.origin === 'guardian' ? ' · started automatically' : ''}</div></button>`;
+  const pastRow = r => `<button class="ts-past" type="button" data-conv="${esc(r.id)}">${esc(r.first || r.title)}<div class="ts-small">${esc(when(r.updatedAt || r.createdAt))}${r.origin === 'guardian' ? ' · started automatically' : ''}</div></button>`;
   // Recent: one line each, the question and a short date.
   const day = iso => { const d = new Date(iso), n = new Date(); const y = new Date(n); y.setDate(n.getDate() - 1);
     return d.toDateString() === n.toDateString() ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toDateString() === y.toDateString() ? 'Yesterday' : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
-  const recentRow = r => `<button class="past" type="button" data-conv="${esc(r.id)}"><span class="t">${esc(r.first || r.title)}</span><span class="small">${esc(day(r.updatedAt || r.createdAt))}</span></button>`;
+  const recentRow = r => `<button class="ts-past" type="button" data-conv="${esc(r.id)}"><span class="ts-t">${esc(r.first || r.title)}</span><span class="ts-small">${esc(day(r.updatedAt || r.createdAt))}</span></button>`;
   async function loadPast() {
     try {
       const { repairs } = await api('repairs?limit=20');
