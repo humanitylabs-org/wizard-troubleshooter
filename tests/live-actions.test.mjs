@@ -29,6 +29,7 @@ test('an app-managed Agent Service is recreated through App Manager, never raw D
   assert.equal(p.status, 0, p.stderr);
   const { a, r } = JSON.parse(p.stdout);
   assert.deepEqual(a.cmd, [wam, ['app', 'restart', 'wizard-agent-service']]);
+  assert.ok(a.timeout >= 300000, 'App Manager restart waits up to 300 s, so the action must outlast it');
   assert.deepEqual(JSON.parse(fs.readFileSync(called, 'utf8')), ['app', 'restart', 'wizard-agent-service']);
   assert.equal(r.ok, true);
 });
