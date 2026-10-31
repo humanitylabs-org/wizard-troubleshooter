@@ -1,5 +1,17 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
 const page=fs.readFileSync(new URL('../web/index.html',import.meta.url),'utf8');
+test('the welcome screen keeps James\'s original one-tap repair path',()=>{
+ assert.match(page, /<h1>Fix Wizard<\/h1>/);
+ assert.match(page, /What's wrong\?/);
+ assert.match(page, /Tell me and I'll fix it, even when Wizard's normal chat is down\./);
+ const chips=page.slice(page.indexOf('<div class="ts-chips"'),page.indexOf('<div class="ts-log"'));
+ assert.deepEqual([...chips.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map(m=>m[1]), ['My Wizard is down', "Messages won't send", "My agent isn't replying", 'Wizard is slow']);
+ assert.match(page, /I can already see a problem with/);
+ assert.match(page, /\.ts-chips \{ display: flex; flex-direction: column;/);
+ assert.doesNotMatch(page, /id="(?:recheck|recent|recentList)"|Fix it:/);
+ assert.match(page, /<div id="pastWrap" hidden><h2>Earlier repair chats<\/h2>/);
+ assert.match(page, /It works now<\/button>.*Still not working<\/button>.*Something else<\/button>/);
+});
 test('a diagnosed problem shows one fix path in Fix Wizard',()=>{
  assert.match(page,/Your Wizard can't send messages to/);assert.match(page,/<ol><li>Tap Sign in to/);assert.match(page,/Come back here\. Your waiting message sends on its own/);assert.match(page,/Something else is wrong/);
  for(const selector of ['#scroll','.ts-composer','footer','#picker','#pill'])assert.ok(page.includes('body.ts-diagnosed '+selector));

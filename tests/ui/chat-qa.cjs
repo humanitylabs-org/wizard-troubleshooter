@@ -18,6 +18,8 @@ const B = process.argv[2], OUT = process.argv[3] || '.';
     ok(`${name}: composer near the bottom`, ta.y + ta.height > vp.height - 70);
     ok(`${name}: nothing overflows horizontally`, await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     ok(`${name}: segments fit`, await p.evaluate(() => [...document.querySelectorAll('.ts-seg')].every(s => s.scrollWidth <= s.clientWidth + 1)));
+    ok(`${name}: original one-tap choices and subtitle`, JSON.stringify(await p.locator('.ts-chips .ts-chip').allTextContents()) === JSON.stringify(['My Wizard is down', "Messages won't send", "My agent isn't replying", 'Wizard is slow']) && await p.locator('.ts-sub').textContent() === "Tell me and I'll fix it, even when Wizard's normal chat is down.");
+    ok(`${name}: every rendered class is namespaced`, await p.evaluate(() => [...document.querySelectorAll('[class]')].every(el => [...el.classList].every(c => c.startsWith('ts-')))));
     await ctx.close();
   }
   const p = await br.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
@@ -48,13 +50,6 @@ const B = process.argv[2], OUT = process.argv[3] || '.';
   // Past repair chats: listed in the details sheet with their first line; tapping one opens it.
   await p.locator('[data-new]').tap(); await p.waitForTimeout(500);
   ok('Something else brings back the one-tap buttons', await p.locator('#welcome').isVisible() && (await p.locator('.ts-chips .ts-chip').count()) === 4 && !(await p.locator('.ts-msg').count()));
-  await p.waitForSelector('#recent:not([hidden]) .ts-past');
-  ok('recent chats show under the one-tap buttons', /My Wizard is down/.test(await p.locator('#recentList .ts-past').first().textContent()));
-  ok('status line is one plain sentence', /^(Everything is working|Something's wrong: .+|Slow: .+|\d+ things need fixing)$/.test((await p.locator('#pillText').textContent()).trim()));
-  await p.screenshot({ path: `${OUT}/phone-recent.png` });
-  await p.locator('#recentList .ts-past').first().tap(); await p.waitForTimeout(1200);
-  ok('tapping a recent chat reopens it', (await p.locator('.ts-msg.ts-agent').count()) === 1 && /#r=[a-f0-9]{16}/.test(p.url()));
-  await p.locator('[data-new]').tap(); await p.waitForTimeout(500);
   await p.locator('#pill').tap(); await p.waitForSelector('#sheet[open] .ts-past');
   ok('details list the past chat with its first line', /My Wizard is down/.test(await p.locator('#past .ts-past').first().textContent()));
   await p.locator('#past .ts-past').first().tap(); await p.waitForTimeout(1200);
@@ -62,8 +57,6 @@ const B = process.argv[2], OUT = process.argv[3] || '.';
   const d = await br.newPage({ viewport: { width: 1280, height: 860 } });
   await d.goto(B + '/troubleshoot/'); await d.waitForSelector('.ts-seg'); await d.waitForTimeout(800);
   await d.screenshot({ path: `${OUT}/desktop.png` });
-  await d.locator('#recheck').click(); await d.waitForFunction(() => document.getElementById('recheck').textContent === 'Check again', null, { timeout: 15000 });
-  ok('desktop: Check again re-checks and settles', /working|wrong|need fixing|Slow|Can't check/.test(await d.locator('#pillText').textContent()));
   ok('desktop: one-tap buttons on the welcome screen', (await d.locator('.ts-chips .ts-chip').count()) === 4 && await d.locator('.ts-chip.ts-main').isVisible());
   // A status-only sign-in failure must stay actionable even with both normal-agent services down.
   for (const [engine, label] of [['claude', 'Claude'], ['chatgpt', 'ChatGPT']]) for (const skin of ['dark', 'light']) {

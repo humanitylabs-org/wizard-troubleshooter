@@ -32,43 +32,25 @@ button { font: inherit; color: inherit; }
 body.ts-hosted a.ts-back { display: none; }
 body.ts-hosted header h1 { visibility: hidden; }
 body.ts-hosted header { padding-top: 4px; padding-bottom: 0; }
-/* Same column as the content below, so the status row lines up with it on wide windows. */
-header { flex: none; display: flex; align-items: center; gap: 4px; padding: max(8px, env(safe-area-inset-top)) max(10px, calc((100% - 680px) / 2 + 10px)) 8px; }
+header { flex: none; display: flex; align-items: center; gap: 6px; padding: max(8px, env(safe-area-inset-top)) 12px 8px; }
 header h1 { font-size: 16px; font-weight: 600; margin: 0; flex: 1; }
 a.ts-back { color: var(--text); text-decoration: none; font-size: 24px; line-height: 1; padding: 4px 8px 6px 2px; }
 .ts-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); background: none; border: 0; padding: 8px 4px 8px 8px; cursor: pointer; max-width: 60vw; }
 .ts-pill span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Status line: one plain sentence about Wizard, details on tap. */
-.ts-statusline { flex: 1; max-width: none; min-height: 44px; font-size: 15px; font-weight: 500; color: var(--text); padding: 8px 4px; text-align: left; }
-.ts-statusline #pillText { flex: 0 1 auto; min-width: 0; }
-.ts-statusline .ts-more { flex: none; font-size: 18px; line-height: 1; color: var(--muted); }
-/* Check again: one quiet icon button; it turns while checking. */
-.ts-recheck { flex: none; min-height: 44px; padding: 0 10px; border: 0; border-radius: var(--radius-tile); background: none; color: var(--muted); font-size: 13px; cursor: pointer; }
-.ts-recheck:hover { background: var(--fill); color: var(--text); }
-.ts-recheck.ts-busy { opacity: .6; cursor: progress; }
-body.ts-hosted header h1 { display: none; }
-/* Recent repair chats, right under the one-tap buttons. */
-.ts-recent { margin-top: 28px; }
-.ts-recent .ts-head { display: flex; align-items: center; justify-content: space-between; }
-.ts-recent h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0; }
-.ts-recent .ts-all { background: none; border: 0; padding: 0 4px; min-height: 44px; color: var(--muted); font-size: 13px; cursor: pointer; }
-.ts-recent .ts-all:hover { color: var(--text); }
-#recentList .ts-past { display: flex; align-items: baseline; gap: 12px; min-height: 44px; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
-#recentList .ts-past:first-child { border-top: 0; }
-#recentList .ts-past .ts-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#recentList .ts-past .ts-small { flex: none; }
 .ts-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
 .ts-dot.ts-ok { background: var(--ok); } .ts-dot.ts-bad { background: var(--bad); } .ts-dot.ts-warn { background: var(--warn); }
 #scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .ts-wrap { max-width: 680px; margin: 0 auto; padding: 8px 16px 16px; min-height: 100%; display: flex; flex-direction: column; }
-.ts-welcome { padding: 20px 0 8px; }
-.ts-welcome .ts-big { font-size: 22px; font-weight: 600; margin: 0; }
+.ts-welcome { margin-top: auto; padding: 0 0 8px; }
+.ts-welcome .ts-big { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+.ts-welcome .ts-sub { color: var(--muted); font-size: 15px; }
+.ts-welcome .ts-alert { margin-top: 14px; font-size: 14px; display: flex; gap: 10px; }
+.ts-welcome .ts-alert span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.ts-welcome .ts-alert .ts-dot { margin-top: 7px; }
 /* The one-tap buttons. */
-.ts-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-top: 16px; }
-.ts-chip { text-align: left; background: var(--fill); border: 0; border-radius: var(--radius-tile); padding: 12px 14px; min-height: 48px; cursor: pointer; }
-.ts-chip:hover { background: var(--fill2); }
-/* Only a real problem gets the accent: the first button then names what's wrong. */
-body.ts-problem .ts-chip.ts-main { background: var(--accent); color: var(--on-accent); font-weight: 600; grid-column: 1 / -1; }
+.ts-chips { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; }
+.ts-chip { text-align: left; background: var(--fill); border: 1px solid var(--line); border-radius: var(--radius-tile); padding: 12px 14px; min-height: 44px; cursor: pointer; }
+.ts-chip.ts-main { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
 .ts-log { display: flex; flex-direction: column; gap: 14px; }
 .ts-log:empty { display: none; }
 .ts-msg { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -87,15 +69,15 @@ body.ts-problem .ts-chip.ts-main { background: var(--accent); color: var(--on-ac
 .ts-spin { width: 13px; height: 13px; flex: none; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: s .9s linear infinite; }
 @keyframes s { to { transform: rotate(360deg); } }
 .ts-after { display: flex; gap: 6px; flex-wrap: wrap; }
-.ts-after .ts-chip { padding: 8px 12px; font-size: 14px; min-height: 40px; }
+.ts-after .ts-chip { padding: 8px 12px; font-size: 14px; }
 footer { flex: none; padding: 4px 16px max(12px, env(safe-area-inset-bottom)); }
 .ts-dock { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
 /* Model picker: one tap, right above the message box. */
-.ts-picker { display: flex; gap: 4px; }
+.ts-picker { display: flex; gap: 2px; padding: 3px; background: var(--fill); border-radius: var(--radius-tile); }
 .ts-seg { flex: 1 1 0; min-width: 0; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px; border: 0; border-radius: calc(var(--radius-tile) - 3px); background: none; color: var(--muted); cursor: pointer; line-height: 1.2; }
 .ts-seg b { font-size: 14px; font-weight: 600; }
 .ts-seg small { font-size: 11px; opacity: .8; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ts-seg[aria-checked="true"] { background: var(--fill); color: var(--text); }
+.ts-seg[aria-checked="true"] { background: var(--fill2); color: var(--text); }
 .ts-seg.ts-off { opacity: .6; } .ts-seg.ts-off b { font-weight: 500; } .ts-seg.ts-off[aria-checked="true"] { opacity: .75; }
 .ts-composer { display: flex; gap: 8px; align-items: flex-end; }
 textarea { flex: 1; min-height: 44px; max-height: 160px; resize: none; font: inherit; color: var(--text); background: var(--fill); border: 1px solid var(--line); border-radius: 22px; padding: 10px 16px; outline: none; }
@@ -121,7 +103,7 @@ dialog#sheet::backdrop { background: color-mix(in srgb, var(--wz-base, Canvas) 7
 #sheet .ts-bottom { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--wz-panel, Canvas) 14px); padding: 22px 0 max(12px, env(safe-area-inset-bottom)); margin-top: 6px; }
 #sheet .ts-bottom .ts-act { width: 100%; justify-content: center; }
 /* A diagnosed sign-in problem (#14): one step-by-step path, nothing else on screen. */
-body.ts-diagnosed #scroll, body.ts-diagnosed .ts-composer, body.ts-diagnosed footer, body.ts-diagnosed #picker, body.ts-diagnosed #pill, body.ts-diagnosed #recheck { display: none !important; }
+body.ts-diagnosed #scroll, body.ts-diagnosed .ts-composer, body.ts-diagnosed footer, body.ts-diagnosed #picker, body.ts-diagnosed #pill { display: none !important; }
 body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-width: 620px; width: 100%; margin: 0 auto; }
 #reconnect h2 { font-size: 20px; line-height: 1.3; margin: 8px 0 12px; }
 #reconnect p { color: var(--muted); }
@@ -134,24 +116,21 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
 <body>
 <header>
   <a class="ts-back" id="back" href="/wizard-os-home/" aria-label="Back to Wizard">‹</a>
-  <h1 hidden>Fix Wizard</h1>
-  <button class="ts-pill ts-statusline" id="pill" type="button" aria-label="Show system details"><span class="ts-dot" id="pillDot"></span><span id="pillText">Checking Wizard…</span><span class="ts-more" aria-hidden="true">›</span></button>
-  <button class="ts-recheck" id="recheck" type="button">Check again</button>
+  <h1>Fix Wizard</h1>
+  <button class="ts-pill" id="pill" type="button" aria-label="Show system details"><span class="ts-dot" id="pillDot"></span><span id="pillText">Checking…</span></button>
 </header>
 
 <div id="reconnect" class="ts-signin" role="status" hidden></div>
 <div id="scroll"><div class="ts-wrap">
   <section class="ts-welcome" id="welcome">
-    <h2 class="ts-big">What's wrong?</h2>
+    <div class="ts-big">What's wrong?</div>
+    <div class="ts-sub">Tell me and I'll fix it, even when Wizard's normal chat is down.</div>
+    <div class="ts-alert" id="alert" hidden><span class="ts-dot ts-bad"></span><span id="alertText"></span></div>
     <div class="ts-chips" id="chips">
       <button class="ts-chip ts-main" type="button" data-say="My Wizard is down, please fix it.">My Wizard is down</button>
       <button class="ts-chip" type="button" data-say="My messages won't send in Wizard. Please fix it.">Messages won't send</button>
       <button class="ts-chip" type="button" data-say="My agent isn't replying in Wizard. Please fix it.">My agent isn't replying</button>
       <button class="ts-chip" type="button" data-say="Wizard is really slow. Please find out why and fix it.">Wizard is slow</button>
-    </div>
-    <div class="ts-recent" id="recent" hidden>
-      <div class="ts-head"><h2>Recent</h2><button class="ts-all" id="allChats" type="button">See all</button></div>
-      <div id="recentList"></div>
     </div>
   </section>
   <div class="ts-log" id="log"></div>
@@ -173,7 +152,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   <h2>Manual fixes</h2>
   <div class="ts-fixes" id="fixes"></div>
   <div class="ts-fixmsg" id="fixMsg" role="status"></div>
-  <div id="pastWrap" hidden><h2>All repair chats</h2><div id="past"></div></div>
+  <div id="pastWrap" hidden><h2>Earlier repair chats</h2><div id="past"></div></div>
   <div id="incWrap" hidden><h2>Recently</h2><div id="incidents"></div></div>
   <div class="ts-bottom"><button class="ts-act" id="closeSheet" type="button">Done</button></div>
 </dialog>
@@ -239,11 +218,6 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   // The window's Back (shell) closes the sheet first.
   try { WA?.back?.register?.({ canGoBack: () => sheetOpen(), back: () => { if (!sheetOpen()) return false; closeSheet(); return true; } }); } catch {}
   $('pill').addEventListener('click', openSheet);
-  $('recheck').addEventListener('click', async () => {
-    const b = $('recheck'); if (b.classList.contains('ts-busy')) return;
-    b.classList.add('ts-busy'); b.textContent = 'Checking…'; $('pillText').textContent = 'Checking Wizard…';
-    try { await refresh(true); } finally { setTimeout(() => { b.classList.remove('ts-busy'); b.textContent = 'Check again'; }, 400); }
-  });
   $('closeSheet').addEventListener('click', closeSheet);
   $('sheet').addEventListener('click', e => {
     if (e.target !== $('sheet')) return;
@@ -303,12 +277,9 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     lastStatus = s; actions = s.actions || actions;
     const bad = s.checks.filter(c => !c.ok && !c.skipped);
     $('pillDot').className = 'ts-dot ts-' + (s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'warn' : 'bad');
-    const main = document.querySelector('.ts-chip.ts-main');
-    if (main) main.textContent = s.overall !== 'ok' && bad.length ? `Fix it: ${bad.length === 1 ? bad[0].label.replace(/^Your /, 'your ') : bad.length + ' problems'}` : 'My Wizard is down';
-    $('pillText').textContent = s.overall === 'ok' ? 'Everything is working'
-      : bad.length === 1 ? `${s.overall === 'degraded' ? 'Slow' : 'Something\'s wrong'}: ${bad[0].label.replace(/^Your /, 'your ')}`
-      : `${bad.length} things need fixing`;
-    document.body.classList.toggle('ts-problem', s.overall !== 'ok' && bad.length > 0);
+    $('pillText').textContent = s.overall === 'ok' ? 'All working' : bad.length === 1 ? bad[0].label + ': problem' : bad.length + ' problems';
+    $('alert').hidden = s.overall === 'ok' || !bad.length;
+    if (bad.length) $('alertText').textContent = `I can already see a problem with ${bad[0].label.replace(/^Your /, 'your ')}: ${String(bad[0].detail || '').replace(/\.$/, '').toLowerCase()}. Tap below and I'll fix it.`;
     $('checks').innerHTML = s.checks.map(c => `<div class="ts-row"><span class="ts-dot ${c.skipped ? '' : c.ok ? (c.slow ? 'ts-warn' : 'ts-ok') : 'ts-bad'}"></span><div class="ts-m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="ts-d">${esc(c.detail)}</div>`}</div></div>`).join('');
     $('fixes').innerHTML = Object.entries(actions).map(([k, a]) => `<button class="ts-act" type="button" data-act="${esc(k)}">${esc(a.label)}</button>`).join('');
     if (s.accounts) {
@@ -326,7 +297,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     // /verify? rather than /verify, so ordinary page arrival must use /status.
     const route = 'status' + (query.size ? '?' + query : '');
     try { paintStatus(await api(route)); if (!accounts && !running) loadEngines(); }
-    catch { $('pillDot').className = 'ts-dot ts-bad'; $('pillText').textContent = 'Can\'t check Wizard right now'; }
+    catch { $('pillDot').className = 'ts-dot ts-bad'; $('pillText').textContent = 'Can\'t check'; }
   }
   async function loadIncidents() {
     try {
@@ -420,7 +391,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   function openConv(id) { clearTimeout(polling); current = id; seq = 0; log.innerHTML = ''; history.replaceState(history.state, '', '#r=' + id); poll(); }
   function newChat() {
     clearTimeout(polling); current = null; seq = 0; log.innerHTML = ''; $('welcome').hidden = false;
-    history.replaceState(history.state, '', location.pathname + location.search); setRunning(false); refresh(true); loadPast();
+    history.replaceState(history.state, '', location.pathname + location.search); setRunning(false); refresh(true);
   }
   async function say(message) {
     message = String(message || '').trim(); if (!message || running) return;
@@ -457,24 +428,14 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   $('input').addEventListener('input', autosize);
   $('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer:fine)').matches) { e.preventDefault(); say($('input').value); } });
 
-  const pastRow = r => `<button class="ts-past" type="button" data-conv="${esc(r.id)}">${esc(r.first || r.title)}<div class="ts-small">${esc(when(r.updatedAt || r.createdAt))}${r.origin === 'guardian' ? ' · started automatically' : ''}</div></button>`;
-  // Recent: one line each, the question and a short date.
-  const day = iso => { const d = new Date(iso), n = new Date(); const y = new Date(n); y.setDate(n.getDate() - 1);
-    return d.toDateString() === n.toDateString() ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toDateString() === y.toDateString() ? 'Yesterday' : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
-  const recentRow = r => `<button class="ts-past" type="button" data-conv="${esc(r.id)}"><span class="ts-t">${esc(r.first || r.title)}</span><span class="ts-small">${esc(day(r.updatedAt || r.createdAt))}</span></button>`;
   async function loadPast() {
     try {
       const { repairs } = await api('repairs?limit=20');
-      const others = repairs.filter(r => r.id !== current);
+      const others = repairs.filter(r => r.id !== current).slice(0, 8);
       $('pastWrap').hidden = !others.length;
-      $('past').innerHTML = others.map(pastRow).join('');
-      $('recent').hidden = !others.length;
-      $('recentList').innerHTML = others.slice(0, 3).map(recentRow).join('');
-      $('allChats').hidden = others.length <= 3;
+      $('past').innerHTML = others.map(r => `<button class="ts-past" type="button" data-conv="${esc(r.id)}">${esc(r.first || r.title)}<div class="ts-small">${esc(when(r.updatedAt || r.createdAt))}${r.origin === 'guardian' ? ' · started automatically' : ''}</div></button>`).join('');
     } catch {}
   }
-  $('recentList').addEventListener('click', e => { const b = e.target.closest('[data-conv]'); if (b) openConv(b.dataset.conv); });
-  $('allChats').addEventListener('click', () => { openSheet(); requestAnimationFrame(() => $('pastWrap').scrollIntoView({ block: 'start' })); });
   // Wait for the sheet's own history entry to pop before setting the thread's hash, or history.back() wipes it.
   $('past').addEventListener('click', e => {
     const b = e.target.closest('[data-conv]'); if (!b) return;
@@ -487,7 +448,6 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   if (m) openConv(m[1]);
   refresh(false, false);
   loadEngines();
-  loadPast();
   setInterval(() => { if (!document.hidden) refresh(false); }, 20000);
 })();
 </script>
