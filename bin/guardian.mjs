@@ -17,6 +17,18 @@ const HOUR = 3600e3;
 const MAX_FIXES_PER_HOUR = 3;
 const ROLLBACK_WINDOW = 2 * HOUR; // undo only an update installed this recently
 const AI_REPAIR_GAP = 2 * HOUR;
+const PRE_UPDATE_LOOKBACK = 6 * HOUR; // the link must have been healthy this long before an update for the update to take the blame
+
+// Undo an update only when the evidence says the update caused the failure: it was installed recently,
+// this link never failed in the hours before it, it is not a version we already undid or rolled back to.
+// A problem that predates the update (load, a slow disk, a bug in an older version) is never "fixed" by
+// undoing the newest release — that can remove the very fix for it.
+export function updateCausedIt(s, id, release, now) {
+  if (now - release.changedAt >= ROLLBACK_WINDOW) return false;
+  if (s.rolledBack?.[id] === release.target || s.rolledBackTo?.[id] === release.target) return false;
+  const before = (s.failTimes?.[id] || []).filter(t => t < release.changedAt && release.changedAt - t < PRE_UPDATE_LOOKBACK);
+  return before.length === 0;
+}
 // GUARDIAN_ACT=0: report-only (checks, counts and logs what it would do, never restarts, rolls back or starts a repair).
 const DRY = process.argv.includes('--dry-run') || process.env.GUARDIAN_ACT === '0';
 const THREAD = process.env.GUARDIAN_THREAD || '';
@@ -70,7 +82,10 @@ async function main() {
   const actionsTaken = [];
 
   s.probeSeen ||= {};
+  s.failTimes ||= {};
+  s.rolledBackTo ||= {};
   for (const c of status.checks) {
+    if (!c.ok) s.failTimes[c.id] = [...(s.failTimes[c.id] || []).filter(t => now - t < PRE_UPDATE_LOOKBACK + ROLLBACK_WINDOW), now];
     if (c.ok) s.fails[c.id] = 0;
     else if (!byId[c.id].replyProbe || (c.checkedAt && s.probeSeen[c.id] !== c.checkedAt)) s.fails[c.id] = (s.fails[c.id] || 0) + 1;
     if (c.checkedAt) s.probeSeen[c.id] = c.checkedAt;
@@ -90,7 +105,7 @@ async function main() {
     const recent = (s.fixes[c.id] || []).filter(t => now - t < HOUR);
     s.fixes[c.id] = recent;
     const release = def.rollback ? await lastAgentRelease() : null;
-    const freshUpdate = release && now - release.changedAt < ROLLBACK_WINDOW && s.rolledBack[c.id] !== release.target;
+    const freshUpdate = release && updateCausedIt(s, c.id, release, now);
     // Escalation: restart first; if a restart already failed to help and an update is fresh, undo it.
     let action = null;
     if (recent.length >= 1 && freshUpdate) action = `rollback:${c.id}`;
@@ -100,7 +115,11 @@ async function main() {
     logIncident({ kind: 'auto-fix', action, text: `${c.label} wasn't working (${bare(c.detail)}). Wizard ${action.startsWith('rollback') ? 'is undoing the last update' : 'is restarting it'}.` });
     const r = await doAction(action);
     recent.push(now);
-    if (action.startsWith('rollback') && release) s.rolledBack[c.id] = release.target;
+    if (action.startsWith('rollback') && release) {
+      s.rolledBack[c.id] = release.target;
+      const back = await lastAgentRelease();
+      if (back) s.rolledBackTo[c.id] = back.target; // never "undo" our own undo
+    }
     await sleep(8000);
     const again = (await runChecks()).checks.find(x => x.id === c.id);
     const fixed = r.ok && again?.ok;
@@ -154,4 +173,4 @@ async function main() {
   console.log(JSON.stringify({ overall: status.overall, failing: failing.map(f => f.id), actions: actionsTaken.map(a => `${a.action}:${a.fixed}`) }));
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+if (process.argv[1] && import.meta.url === new URL(`file://${path.resolve(process.argv[1])}`).href) main().catch(e => { console.error(e); process.exit(1); });
