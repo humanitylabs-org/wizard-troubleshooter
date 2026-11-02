@@ -5,11 +5,13 @@ import vm from 'node:vm'
 const page = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8')
 const start = page.indexOf('  async function refresh(fresh, accounts) {')
 const end = page.indexOf('  async function loadIncidents()', start)
+// Every server call goes through call(op) -> ROUTES (the browser boundary routes the same ops through the shell).
+const routes = page.slice(page.indexOf('  const ROUTES = {'), page.indexOf('\n  }\n', page.indexOf('  async function call(op')) + 4)
 for (const [fresh, accounts, expected] of [[false, false, 'status'], [true, false, 'status?fresh=1'], [false, true, 'status?accounts=1'], [true, true, 'status?fresh=1&accounts=1']]) {
   test(`expired sign-in page arrival uses a gateway-safe status URL (${fresh}, ${accounts})`, async () => {
     const seen = []
-    const context = vm.createContext({ URLSearchParams, running: false, api: async path => { seen.push(path); return {} }, paintStatus: () => {}, loadEngines: () => {} })
-    vm.runInContext(page.slice(start, end), context)
+    const context = vm.createContext({ URLSearchParams, running: false, VIA_SHELL: false, H: {}, api: async path => { seen.push(path); return {} }, paintStatus: () => {}, loadEngines: () => {} })
+    vm.runInContext(routes + page.slice(start, end), context)
     await context.refresh(fresh, accounts)
     assert.deepEqual(seen, [expected])
   })
