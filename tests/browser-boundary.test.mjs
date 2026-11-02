@@ -98,6 +98,13 @@ test('the page: token only in a top-level navigation that cannot be framed or op
     assert.ok(!framed.body.includes(t.token) && !framed.body.includes('wizard-recovery-token" content'));
     assert.match(framed.headers['content-security-policy'], /sandbox allow-scripts allow-forms allow-downloads/);
     assert.ok(!/allow-same-origin/.test(framed.headers['content-security-policy']));
+    assert.equal(framed.headers['x-frame-options'], 'SAMEORIGIN');
+    // wizard-os 389 rehearsal: a page on another site (or another port of this box) framing /troubleshoot/ got a 200.
+    for (const site of ['cross-site', 'same-site', 'none']) {
+      const foreign = await req(t.port, '/', { headers: { 'Sec-Fetch-Dest': 'iframe', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': site } });
+      assert.equal(foreign.status, 403, site);
+      assert.ok(!foreign.body.includes('<html') && !foreign.body.includes(t.token), site);
+    }
     for (const h of [{}, { 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors' }, { 'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'no-cors' }, { 'Sec-Fetch-Dest': 'script', 'Sec-Fetch-Mode': 'no-cors' }]) {
       const r = await req(t.port, '/index.html', { headers: h });
       assert.equal(r.status, 403, JSON.stringify(h));
