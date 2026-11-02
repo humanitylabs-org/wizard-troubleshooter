@@ -157,13 +157,34 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   <div class="ts-bottom"><button class="ts-act" id="closeSheet" type="button">Done</button></div>
 </dialog>
 
+<script src="/wizard-os-home/core/browser-boundary-client.js"></script>
 <script src="/wizard-os-home/core/app-client.js"></script>
 <script>
 (() => {
   const $ = id => document.getElementById(id);
+  /* Browser boundary (default-off on the server). Standalone tab: the server put a recovery token in this navigation
+   * response only; it moves into memory and goes out only as a header to /troubleshoot/api/. Inside Wizard: the page
+   * is an opaque frame, holds nothing, and asks the shell for fixed recovery operations (the shell holds the token). */
+  const tokenNode = document.querySelector('meta[name="wizard-recovery-token"]');
+  const RECOVERY_TOKEN = tokenNode && /^[a-f0-9]{64}$/.test(tokenNode.content) ? tokenNode.content : '';
+  tokenNode?.remove();
+  const BC = window.WizBoundaryClient, VIA_SHELL = !!BC && globalThis.origin === 'null' && window.parent !== window;
+  const shellReady = VIA_SHELL ? new Promise(r => { if (BC.ready) r(); else addEventListener('wizard:boundary:connected', r, { once: true }); }) : null;
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const md = s => esc(s).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
   const H = { 'Content-Type': 'application/json', 'X-Wizard-Troubleshoot': '1' };
+  // Every server call by name; outside the boundary each is the same fixed path it always was.
+  const ROUTES = {
+    status: a => ['status' + (a.fresh || a.accounts ? '?' + new URLSearchParams({ ...(a.fresh ? { fresh: '1' } : {}), ...(a.accounts ? { accounts: '1' } : {}) }) : '')],
+    engines: () => ['engines'], 'engine.set': a => ['engine', a], incidents: () => ['incidents'],
+    repairs: a => ['repairs?limit=' + a.limit], 'repair.read': a => [`repair/${a.id}?since=${a.since}`],
+    'repair.start': a => ['repair', a], 'repair.stop': () => ['repair/stop', {}], 'repair.approve': a => ['repair/approve', a], action: a => ['action', a],
+  };
+  async function call(op, args = {}) {
+    if (VIA_SHELL) { await shellReady; return BC.request('recovery.call', { op, args }, ['action', 'repair.start'].includes(op) ? 660000 : 30000); }
+    const [path, body] = ROUTES[op](args);
+    return api(path, body ? { method: 'POST', headers: H, body: JSON.stringify(body) } : {});
+  }
   const NAMES = { claude: 'Claude', chatgpt: 'ChatGPT', tinfoil: 'Tinfoil' };
   const WA = window.WizardApp || null; // absent when the shell is down: the page still works, in system colours
   // A connection app's page: same origin (/wizard-claude/), its own HTTPS port, or its App Store page when missing.
@@ -184,20 +205,25 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   }
   function setEngines(list, sel) {
     engines = list || []; selected = sel || selected || engines.find(a => a.ok)?.engine || 'claude';
-    try { localStorage.setItem(CACHE, JSON.stringify({ engines, selected })); } catch {}
+    // Only what the picker paints (display data, no links or details).
+    const value = { engines: engines.slice(0, 6).map(a => ({ engine: String(a.engine || ''), name: String(a.name || '').slice(0, 80), ok: a.ok === true, modelLabel: String(a.modelLabel || '').slice(0, 80), reason: String(a.reason || '').slice(0, 160) })), selected: NAMES[selected] ? selected : null };
+    if (VIA_SHELL) call('cache.write', { value }).catch(() => {});
+    else try { localStorage.setItem(CACHE, JSON.stringify(value)); } catch {}
     paintPicker();
   }
-  try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); if (c?.engines) { engines = c.engines; selected = c.selected; paintPicker(); } } catch {}
+  const cached = c => { if (c?.engines && !engines.length) { engines = c.engines; selected = c.selected; paintPicker(); } };
+  if (VIA_SHELL) call('cache.read').then(cached, () => {});
+  else try { cached(JSON.parse(localStorage.getItem(CACHE) || 'null')); } catch {}
   async function pick(engine) {
     if (!NAMES[engine] || engine === selected) return;
     selected = engine; paintPicker();
-    try { await api('engine', { method: 'POST', headers: H, body: JSON.stringify({ engine }) }); setEngines(engines, engine); } catch {}
+    try { await call('engine.set', { engine }); setEngines(engines, engine); } catch {}
   }
   $('picker').addEventListener('click', e => {
     const b = e.target.closest('[data-engine]'); if (!b || b.getAttribute('aria-disabled') === 'true') return;
     pick(b.dataset.engine);
   });
-  async function loadEngines() { try { const r = await api('engines'); setEngines(r.engines, r.selected); } catch {} }
+  async function loadEngines() { try { const r = await call('engines'); setEngines(r.engines, r.selected); } catch {} }
 
   // Back: one step at a time. Details sheet → chat → Wizard.
   const sheetOpen = () => $('sheet').open;
@@ -226,7 +252,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   });
 
   async function api(path, opts = {}) {
-    const r = await fetch('/troubleshoot/api/' + path, { cache: 'no-store', credentials: 'same-origin', ...opts });
+    const r = await fetch('/troubleshoot/api/' + path, { cache: 'no-store', credentials: 'same-origin', ...opts, headers: { ...(opts.headers || {}), ...(RECOVERY_TOKEN ? { 'X-Wizard-Recovery-Token': RECOVERY_TOKEN } : {}) } });
     let j = {}; try { j = await r.json(); } catch {}
     if (!r.ok) throw Object.assign(new Error(j.error || j.detail || ('HTTP ' + r.status)), { body: j });
     return j;
@@ -264,6 +290,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     const runId = recoveryParams.get('run_id');
     if (!runId) return;
     try {
+      if (VIA_SHELL) { if ((await call('provider_run', { runId })).sent === true) { recoverySent = true; paintReconnect(null); } return; }
       const r = await fetch('/wizard/v1/provider-recovery?run_id=' + encodeURIComponent(runId), { cache: 'no-store', credentials: 'same-origin' });
       if (r.ok && (await r.json()).sent) { recoverySent = true; paintReconnect(null); }
     } catch {}
@@ -290,18 +317,14 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     if (s.repair && !current) openConv(s.repair.convId);
   }
   async function refresh(fresh, accounts) {
-    const query = new URLSearchParams();
-    if (fresh) query.set('fresh', '1');
-    if (accounts) query.set('accounts', '1');
     // An empty trailing ? survives some private gateways' identity rewrite as
-    // /verify? rather than /verify, so ordinary page arrival must use /status.
-    const route = 'status' + (query.size ? '?' + query : '');
-    try { paintStatus(await api(route)); if (!accounts && !running) loadEngines(); }
+    // /verify? rather than /verify, so ordinary page arrival must use /status (ROUTES.status adds ? only when needed).
+    try { paintStatus(await call('status', { fresh: !!fresh, accounts: !!accounts })); if (!accounts && !running) loadEngines(); }
     catch { $('pillDot').className = 'ts-dot ts-bad'; $('pillText').textContent = 'Can\'t check'; }
   }
   async function loadIncidents() {
     try {
-      const { incidents } = await api('incidents');
+      const { incidents } = await call('incidents');
       const seen = new Set();
       const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result'].includes(i.kind) && (i.text || i.detail))
         .filter(i => { const k = (i.text || i.detail) + when(i.at); return !seen.has(k) && seen.add(k); }).slice(0, 8);
@@ -321,7 +344,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     }
     armed = null; b.classList.remove('ts-primary');
     b.disabled = true; b.textContent = 'Working…'; $('fixMsg').textContent = '';
-    try { const r = await api('action', { method: 'POST', headers: H, body: JSON.stringify({ action: b.dataset.act }) }); paintStatus(r.status); $('fixMsg').textContent = r.detail || 'Done.'; }
+    try { const r = await call('action', { action: b.dataset.act }); paintStatus(r.status); $('fixMsg').textContent = r.detail || 'Done.'; }
     catch (err) { $('fixMsg').textContent = err.message; }
     finally { b.disabled = false; b.textContent = b.dataset.label || a.label; loadIncidents(); }
   });
@@ -382,7 +405,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   async function poll() {
     if (!current) return;
     try {
-      const r = await api(`repair/${current}?since=${seq}`);
+      const r = await call('repair.read', { id: current, since: seq });
       for (const ev of r.events) { seq = ev.seq; paintEvent(ev); }
       if (r.running) { if (!running) setRunning(true); polling = setTimeout(poll, 1500); return; }
       setRunning(false); refresh(true);
@@ -400,7 +423,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     paintEvent({ type: 'text', role: 'owner', text: message }); setRunning(true);
     $('input').value = ''; autosize();
     try {
-      const r = await api('repair', { method: 'POST', headers: H, body: JSON.stringify({ id: current, message: message + ctx, engine: selected || 'auto' }) });
+      const r = await call('repair.start', { id: current, message: message + ctx, engine: selected || 'auto' });
       if (r.id !== current) { current = r.id; seq = 0; history.replaceState(history.state, '', '#r=' + r.id); }
       seq += 1; // the server's copy of our message; already painted
       poll();
@@ -410,11 +433,16 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     const approval = e.target.closest('[data-approval]');
     if (approval) {
       const row = approval.closest('[data-approval-row]'); row.querySelectorAll('button').forEach(b => b.disabled = true);
-      api('repair/approve', { method: 'POST', headers: H, body: JSON.stringify({ id: current, approvalId: approval.dataset.approval, approved: approval.dataset.approved === 'true' }) }).catch(err => { row.querySelector('.ts-approval-state').textContent = err.message; }); return;
+      call('repair.approve', { id: current, approvalId: approval.dataset.approval, approved: approval.dataset.approved === 'true' }).catch(err => { row.querySelector('.ts-approval-state').textContent = err.message; }); return;
     }
     // Inside the Wizard shell, open the connection app in its own window; on the bare page follow the link.
     const o = e.target.closest('[data-openapp]');
-    if (o) { try { if (o.dataset.openapp && window.parent !== window && window.parent.WizOpenApp?.(o.dataset.openapp)) { e.preventDefault(); return; } } catch (_) {} return; }
+    if (o) {
+      // Opaque frame: the shell opens the connection app as a Wizard window; this frame never follows the link
+      // (a followed link would put another page in the Troubleshooter's window).
+      if (VIA_SHELL) { e.preventDefault(); call('open_app', { appId: o.dataset.openapp || 'app-store' }).catch(() => {}); return; }
+      try { if (o.dataset.openapp && window.parent !== window && window.parent.WizOpenApp?.(o.dataset.openapp)) { e.preventDefault(); return; } } catch (_) {} return;
+    }
     const c = e.target.closest('[data-say]'); if (c) return say(c.dataset.say);
     const rt = e.target.closest('[data-retry]');
     if (rt) { // the picked engine couldn't answer: switch to the offered one and ask the same question again
@@ -423,14 +451,14 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     }
     if (e.target.closest('[data-new]')) newChat();
   });
-  $('send').addEventListener('click', () => running ? api('repair/stop', { method: 'POST', headers: H, body: '{}' }).catch(() => {}) : say($('input').value));
+  $('send').addEventListener('click', () => running ? call('repair.stop').catch(() => {}) : say($('input').value));
   function autosize() { const t = $('input'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 160) + 'px'; }
   $('input').addEventListener('input', autosize);
   $('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer:fine)').matches) { e.preventDefault(); say($('input').value); } });
 
   async function loadPast() {
     try {
-      const { repairs } = await api('repairs?limit=20');
+      const { repairs } = await call('repairs', { limit: 20 });
       const others = repairs.filter(r => r.id !== current).slice(0, 8);
       $('pastWrap').hidden = !others.length;
       $('past').innerHTML = others.map(r => `<button class="ts-past" type="button" data-conv="${esc(r.id)}">${esc(r.first || r.title)}<div class="ts-small">${esc(when(r.updatedAt || r.createdAt))}${r.origin === 'guardian' ? ' · started automatically' : ''}</div></button>`).join('');

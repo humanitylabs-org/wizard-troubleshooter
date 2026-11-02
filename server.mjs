@@ -19,6 +19,51 @@ function guardianToken() {
   return t;
 }
 
+/* Browser boundary (default-off; wizard-os #133/#385, census row "troubleshooter"). Under the boundary every other
+ * script on the owner's private origin is an untrusted app, so the network owner identity alone no longer authorizes
+ * this listener. Its own, DISTINCT recovery gate, checked here so nothing else (Agent Service, Hermes, sign-in bridge)
+ * has to be up: every /api/ call needs the recovery token (a file only the shell document's server and this process
+ * read; never the shell token) and must not come from a frame or another site. The token reaches a browser only
+ * inside a top-level navigation response: in the shell document (the shell's server injects it) and in this page when
+ * opened as its own tab, with framing and openers cut off. Framed inside Wizard, this page is served without it as an
+ * opaque document, and the shell runs fixed recovery operations for it. */
+const BOUNDARY = process.env.WIZARD_BROWSER_BOUNDARY === '1';
+const RECOVERY_TOKEN_FILE = process.env.WIZARD_RECOVERY_TOKEN_FILE || '';
+let recoveryCache = { at: 0, mtime: 0, value: '' };
+function recoveryToken() {
+  // Re-read on change, so a rotation applies at once; an unreadable or malformed file fails closed (empty).
+  try {
+    const st = fs.statSync(RECOVERY_TOKEN_FILE);
+    if (st.mtimeMs !== recoveryCache.mtime || Date.now() - recoveryCache.at > 60e3) {
+      const v = fs.readFileSync(RECOVERY_TOKEN_FILE, 'utf8').trim();
+      recoveryCache = { at: Date.now(), mtime: st.mtimeMs, value: /^[a-f0-9]{64}$/.test(v) ? v : '' };
+    }
+    return recoveryCache.value;
+  } catch { return ''; }
+}
+if (BOUNDARY && !recoveryToken()) { console.error('WIZARD_BROWSER_BOUNDARY=1 needs WIZARD_RECOVERY_TOKEN_FILE (64 lowercase hex, distinct from the shell token)'); process.exit(2); }
+const FRAME_DESTS = new Set(['iframe', 'frame', 'embed', 'object', 'fencedframe']);
+function recoveryRefusal(req) {
+  const origin = String(req.headers.origin ?? '').trim().toLowerCase();
+  const site = req.headers['sec-fetch-site'];
+  if (origin === 'null' || (site !== undefined && site !== 'same-origin')) return 'cross_site_refused';
+  if (FRAME_DESTS.has(req.headers['sec-fetch-dest'])) return 'frame_refused';
+  const want = recoveryToken(), got = req.headers['x-wizard-recovery-token'];
+  if (!want || typeof got !== 'string' || got.length !== want.length || !crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want))) return 'recovery_token_required';
+  return '';
+}
+const PAGE_CSP = "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'";
+function boundaryPage(req) {
+  const html = fs.readFileSync(PAGE, 'utf8');
+  const dest = req.headers['sec-fetch-dest'], mode = req.headers['sec-fetch-mode'];
+  if (dest === 'document' && mode === 'navigate') return { status: 200, body: html.replace('<head>', `<head><meta name="wizard-recovery-token" content="${recoveryToken()}">`), headers: {
+    'Content-Security-Policy': PAGE_CSP + "; frame-ancestors 'none'", 'X-Frame-Options': 'DENY', 'Cross-Origin-Opener-Policy': 'noopener-allow-popups', 'Cache-Control': 'private, no-store' } };
+  // Inside a Wizard window: no token, and ALWAYS an opaque origin (CSP sandbox), whoever frames it.
+  if (dest === 'iframe' && mode === 'navigate') return { status: 200, body: html, headers: {
+    'Content-Security-Policy': PAGE_CSP + "; frame-ancestors 'self'; sandbox allow-scripts allow-forms allow-downloads", 'Cache-Control': 'private, no-store' } };
+  return { status: 403, body: { error: 'navigation_only' } };
+}
+
 const PORT = +(process.env.PORT || 9691);
 const PREFIX = '/troubleshoot';
 const ORIGINS = new Set(String(process.env.WIZARD_PRIVATE_ORIGINS || (process.env.WIZARD_PUBLIC_NAME ? `https://${process.env.WIZARD_PUBLIC_NAME}` : '')).split(',').map(s => s.trim()).filter(Boolean));
@@ -128,12 +173,17 @@ const server = http.createServer(async (req, res) => {
       if (who && OWNERS.size && !OWNERS.has(who.toLowerCase())) { logIncident({ kind: 'refused', by: who }); who = null; }
       if (!who) return send(res, 403, p.startsWith('/api/') ? { error: 'Open this from one of your own devices on your private network.' } : '<!doctype html><meta name=viewport content="width=device-width"><body style="background:#0b0d12;color:#e8eaf0;font:16px system-ui;padding:24px">Open this from one of your own devices on your private network.</body>');
     }
+    if (BOUNDARY && p.startsWith('/api/')) {
+      const refused = recoveryRefusal(req);
+      if (refused) { if (refused !== 'recovery_token_required') logIncident({ kind: 'refused', by: who, reason: refused }); return send(res, 403, { error: refused }); }
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       const origin = req.headers.origin;
       if (!DEV_OPEN && (!origin || !ORIGINS.has(origin))) return send(res, 403, { error: 'Cross-site request refused.' });
       if (req.headers['x-wizard-troubleshoot'] !== '1') return send(res, 403, { error: 'Missing request header.' });
     }
 
+    if (BOUNDARY && req.method === 'GET' && (p === '/' || p === '/index.html')) { const r = boundaryPage(req); return send(res, r.status, r.body, r.headers || {}); }
     if (req.method === 'GET' && (p === '/' || p === '/index.html')) return send(res, 200, fs.readFileSync(PAGE, 'utf8'), {
       'Content-Security-Policy': "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
     });
