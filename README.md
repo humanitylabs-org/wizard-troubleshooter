@@ -79,8 +79,17 @@ only those logins get in.
 
 POSTs need the private origin plus `X-Wizard-Troubleshoot: 1`. The guardian uses a loopback-only token.
 
+- **App addresses** (`Apps open inside Wizard`, `lib/launchers.mjs`): every installed app that opens at a path on the
+  Wizard origin (`/messenger/`, `/files/`) must keep that path as its launcher address in both `apps.json` copies
+  (`~/.wizard-os` and the Runtipi share the Agent Service reads). Paths seen in `links.json` or a healthy `apps.json`
+  are remembered (`launchers.json` in the state dir), so a run that rewrote both files to a raw port is still caught.
+  After 2 failed minutes the fix (`bin/repair-app-addresses.mjs`) backs up the three files to
+  `launcher-backups/<time>/` (last 20 kept), runs the box's `wam links --json`, reads the addresses back and logs an
+  `app-addresses-repair` incident. It restarts nothing, so the guardian applies it even when report-only
+  (`GUARDIAN_HEAL_ADDRESSES=0` keeps report-only strict; `APP_ADDRESSES=0` turns the check off).
+
 The guardian is report-only with `GUARDIAN_ACT=0`: it logs what it would fix and never restarts, rolls back or starts a
-repair.
+repair (app-address repairs excepted, see above).
 
 Install (Tailscale Serve box, e.g. a Runtipi/WAM Wizard): copy the units as below, then use
 `deploy/tailscale-serve/troubleshooter.conf` as the drop-in for both services (fill in the names), add

@@ -111,8 +111,9 @@ async function main() {
     if (recent.length >= 1 && freshUpdate) action = `rollback:${c.id}`;
     else if (recent.length < MAX_FIXES_PER_HOUR) action = `restart:${c.id}`;
     if (!action) continue;
-    if (DRY) { console.log('[dry-run] would', action, 'for', c.label, '-', c.detail); if (process.env.GUARDIAN_ACT === '0' && s.fails[c.id] === (def.threshold || 2)) logIncident({ kind: 'would-fix', action, text: `Report-only: ${c.label} wasn't working (${bare(c.detail)}); the guardian would ${action.startsWith('rollback') ? 'undo the last update' : 'restart it'}.` }); continue; }
-    logIncident({ kind: 'auto-fix', action, text: `${c.label} wasn't working (${bare(c.detail)}). Wizard ${action.startsWith('rollback') ? 'is undoing the last update' : 'is restarting it'}.` });
+    const healAnyway = def.safeFix && process.env.GUARDIAN_ACT === '0' && !process.argv.includes('--dry-run') && CONFIG.healAddressesInReportOnly;
+    if (DRY && !healAnyway) { console.log('[dry-run] would', action, 'for', c.label, '-', c.detail); if (process.env.GUARDIAN_ACT === '0' && s.fails[c.id] === (def.threshold || 2)) logIncident({ kind: 'would-fix', action, text: `Report-only: ${c.label} wasn't working (${bare(c.detail)}); the guardian would ${action.startsWith('rollback') ? 'undo the last update' : 'restart it'}.` }); continue; }
+    logIncident({ kind: 'auto-fix', action, text: `${c.label} wasn't working (${bare(c.detail)}). Wizard ${action.startsWith('rollback') ? 'is undoing the last update' : def.safeFix ? 'is repairing it' : 'is restarting it'}.` });
     const r = await doAction(action);
     recent.push(now);
     if (action.startsWith('rollback') && release) {
@@ -165,7 +166,7 @@ async function main() {
   if (actionsTaken.length) {
     const lines = actionsTaken.map(a => a.action === 'ai-repair'
       ? `- ${a.label}: restarts didn't fix it, so I've asked your Claude/ChatGPT subscription to repair it. Follow along: /troubleshoot/#r=${a.conversation}`
-      : `- ${a.label} stopped working (${bare(a.detail)}). I ${a.action.startsWith('rollback') ? 'undid the last update' : 'restarted it'}: ${a.fixed ? 'it works again.' : 'still not working, trying further steps.'}`);
+      : `- ${a.label} stopped working (${bare(a.detail)}). I ${a.action.startsWith('rollback') ? 'undid the last update' : a.action === 'restart:app-addresses' ? 'repaired it' : 'restarted it'}: ${a.fixed ? 'it works again.' : 'still not working, trying further steps.'}`);
     if (s.outage) s.outage.reported = true;
     await postThread(`guardian-${now}`, `**Wizard fixed itself** at ${bkk(now)} (${ZONE_NAME}).\n\n${lines.join('\n')}\n\nAnything still wrong? Open the Troubleshooter: /troubleshoot/`);
   }
