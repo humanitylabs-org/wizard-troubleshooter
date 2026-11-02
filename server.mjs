@@ -58,9 +58,15 @@ function boundaryPage(req) {
   const dest = req.headers['sec-fetch-dest'], mode = req.headers['sec-fetch-mode'];
   if (dest === 'document' && mode === 'navigate') return { status: 200, body: html.replace('<head>', `<head><meta name="wizard-recovery-token" content="${recoveryToken()}">`), headers: {
     'Content-Security-Policy': PAGE_CSP + "; frame-ancestors 'none'", 'X-Frame-Options': 'DENY', 'Cross-Origin-Opener-Policy': 'noopener-allow-popups', 'Cache-Control': 'private, no-store' } };
-  // Inside a Wizard window: no token, and ALWAYS an opaque origin (CSP sandbox), whoever frames it.
-  if (dest === 'iframe' && mode === 'navigate') return { status: 200, body: html, headers: {
-    'Content-Security-Policy': PAGE_CSP + "; frame-ancestors 'self'; sandbox allow-scripts allow-forms allow-downloads", 'Cache-Control': 'private, no-store' } };
+  // Inside a Wizard window: no token, and ALWAYS an opaque origin (CSP sandbox). Only the Wizard shell on this same
+  // origin frames it: another site (or another port of this box) is refused here, before any page byte, and the
+  // browser checks frame-ancestors/X-Frame-Options as well (wizard-os 389 rehearsal: a cross-site page got a 200).
+  if (dest === 'iframe' && mode === 'navigate') {
+    const site = req.headers['sec-fetch-site'];
+    if (site !== undefined && site !== 'same-origin') return { status: 403, body: { error: 'frame_refused' } };
+    return { status: 200, body: html, headers: {
+      'Content-Security-Policy': PAGE_CSP + "; frame-ancestors 'self'; sandbox allow-scripts allow-forms allow-downloads", 'X-Frame-Options': 'SAMEORIGIN', 'Cache-Control': 'private, no-store' } };
+  }
   return { status: 403, body: { error: 'navigation_only' } };
 }
 
