@@ -1,0 +1,12 @@
+# Inside the private site block, before the Wizard shell routes. No forward_auth on purpose: the
+# Troubleshooter must keep working when the sign-in bridge is down; it checks the Tailscale peer itself.
+@troubleshootBare path /troubleshoot
+redir @troubleshootBare /troubleshoot/ 308
+handle /troubleshoot/* {
+    request_header -X-Guardian-Token
+    request_header X-Private-Peer {http.request.remote.host}
+    header X-Robots-Tag "noindex, nofollow"
+    reverse_proxy 127.0.0.1:9691 {
+        flush_interval -1
+    }
+}

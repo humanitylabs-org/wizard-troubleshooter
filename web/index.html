@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="color-scheme" content="light dark">
+<title>Fix Wizard</title>
+<!-- Unified design: the shell's own tokens and kit, so the page follows the selected skin (and My skin) like every
+     other app. WizardApp (app-client.js) pushes live skin changes and layers the skin stylesheets. When the shell is
+     down these requests fail and the page falls back to the system colours below: it must keep working then. -->
+<link rel="stylesheet" href="/wizard-os-home/kit/wizard-tokens.css" data-wz-shared="tokens">
+<link rel="stylesheet" href="/wizard-os-home/kit/wizard-ui.css" data-wz-shared="kit">
+<style>
+/* Only aliases onto the shared roles (--wz-*); the fallbacks are system colours for when the shell is unreachable. */
+:root {
+  --text: var(--wz-text, CanvasText); --muted: var(--wz-text-muted, GrayText);
+  --fill: var(--wz-surface, color-mix(in srgb, CanvasText 7%, transparent)); --fill2: var(--wz-surface-raised, color-mix(in srgb, CanvasText 12%, transparent));
+  --line: var(--wz-border, color-mix(in srgb, CanvasText 18%, transparent));
+  --accent: var(--wz-accent, CanvasText); --on-accent: var(--wz-on-accent, Canvas);
+  --ok: var(--wz-success, green); --warn: var(--wz-warning, orange); --bad: var(--wz-danger, red);
+  --radius: var(--wz-radius, 14px); --radius-tile: var(--wz-radius-tile, 12px);
+}
+html[data-color-scheme="light"] { --ok: var(--wz-success-light, green); --warn: var(--wz-warning-light, darkorange); }
+* { box-sizing: border-box; }
+html { background: var(--wz-base, Canvas); }
+html[data-wz-hosted], html:has(> body.ts-hosted) { background: transparent; }
+html, body { margin: 0; height: 100%; color: var(--text); font: var(--wz-font-size, 15px)/var(--wz-line-height, 1.4) var(--wz-font-ui, system-ui, sans-serif); }
+body { display: flex; flex-direction: column; height: 100dvh; background: transparent; }
+button { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+/* Inside a Wizard window the window's own title bar and Back handle navigation. */
+body.ts-hosted a.ts-back { display: none; }
+body.ts-hosted header h1 { visibility: hidden; }
+body.ts-hosted header { padding-top: 4px; padding-bottom: 0; }
+header { flex: none; display: flex; align-items: center; gap: 6px; padding: max(8px, env(safe-area-inset-top)) 12px 8px; }
+header h1 { font-size: 16px; font-weight: 600; margin: 0; flex: 1; }
+a.ts-back { color: var(--text); text-decoration: none; font-size: 24px; line-height: 1; padding: 4px 8px 6px 2px; }
+.ts-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); background: none; border: 0; padding: 8px 4px 8px 8px; cursor: pointer; max-width: 60vw; }
+.ts-pill span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
+.ts-dot.ts-ok { background: var(--ok); } .ts-dot.ts-bad { background: var(--bad); } .ts-dot.ts-warn { background: var(--warn); }
+#scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.ts-wrap { max-width: 680px; margin: 0 auto; padding: 8px 16px 16px; min-height: 100%; display: flex; flex-direction: column; }
+.ts-welcome { margin-top: auto; padding: 0 0 8px; }
+.ts-welcome .ts-big { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+.ts-welcome .ts-sub { color: var(--muted); font-size: 15px; }
+.ts-welcome .ts-alert { margin-top: 14px; font-size: 14px; display: flex; gap: 10px; }
+.ts-welcome .ts-alert span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.ts-welcome .ts-alert .ts-dot { margin-top: 7px; }
+/* The one-tap buttons. */
+.ts-chips { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; }
+.ts-chip { text-align: left; background: var(--fill); border: 1px solid var(--line); border-radius: var(--radius-tile); padding: 12px 14px; min-height: 44px; cursor: pointer; }
+.ts-chip.ts-main { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+.ts-log { display: flex; flex-direction: column; gap: 14px; }
+.ts-log:empty { display: none; }
+.ts-msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ts-msg.ts-owner { align-self: flex-end; max-width: 85%; background: var(--fill2); padding: 9px 13px; border-radius: 16px 16px 4px 16px; }
+.ts-msg.ts-agent { align-self: stretch; }
+.ts-msg.ts-agent code { background: var(--fill); padding: 1px 5px; border-radius: 5px; font-size: 14px; font-family: var(--wz-font-mono, ui-monospace, monospace); }
+.ts-msg .ts-who { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.ts-signin, .ts-note { font-size: 14px; color: var(--muted); }
+.ts-signin { display: flex; flex-direction: column; gap: 8px; color: var(--text); }
+.ts-signin pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; margin: 0; padding: 10px; background: var(--fill); border-radius: var(--radius-tile); font: 13px/1.4 var(--wz-font-mono, ui-monospace, monospace); }
+.ts-signin .ts-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.ts-act { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: var(--radius-tile); border: 1px solid var(--line); background: var(--fill); color: var(--text); text-decoration: none; cursor: pointer; font-size: 14px; }
+.ts-act.ts-primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+.ts-working { font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.ts-working .ts-step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-spin { width: 13px; height: 13px; flex: none; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: s .9s linear infinite; }
+@keyframes s { to { transform: rotate(360deg); } }
+.ts-after { display: flex; gap: 6px; flex-wrap: wrap; }
+.ts-after .ts-chip { padding: 8px 12px; font-size: 14px; }
+footer { flex: none; padding: 4px 16px max(12px, env(safe-area-inset-bottom)); }
+.ts-dock { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+/* Model picker: one tap, right above the message box. */
+.ts-picker { display: flex; gap: 2px; padding: 3px; background: var(--fill); border-radius: var(--radius-tile); }
+.ts-seg { flex: 1 1 0; min-width: 0; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px; border: 0; border-radius: calc(var(--radius-tile) - 3px); background: none; color: var(--muted); cursor: pointer; line-height: 1.2; }
+.ts-seg b { font-size: 14px; font-weight: 600; }
+.ts-seg small { font-size: 11px; opacity: .8; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-seg[aria-checked="true"] { background: var(--fill2); color: var(--text); }
+.ts-seg.ts-off { opacity: .6; } .ts-seg.ts-off b { font-weight: 500; } .ts-seg.ts-off[aria-checked="true"] { opacity: .75; }
+.ts-composer { display: flex; gap: 8px; align-items: flex-end; }
+textarea { flex: 1; min-height: 44px; max-height: 160px; resize: none; font: inherit; color: var(--text); background: var(--fill); border: 1px solid var(--line); border-radius: 22px; padding: 10px 16px; outline: none; }
+textarea::placeholder { color: var(--muted); }
+textarea:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+button.ts-send { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); font-size: 19px; font-weight: 700; cursor: pointer; }
+button.ts-send.ts-stop { background: var(--fill2); color: var(--text); font-size: 14px; }
+button:disabled { opacity: .5; cursor: default; }
+/* Details: the one pop-up, a native dialog in the shared sheet's look. */
+dialog#sheet { color: var(--text); background: var(--wz-panel, Canvas); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 16px 0; width: min(560px, calc(100% - 24px)); max-width: none; max-height: 85%; overflow-y: auto; }
+dialog#sheet::backdrop { background: color-mix(in srgb, var(--wz-base, Canvas) 70%, transparent); }
+@media (max-width: 599px) { dialog#sheet { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 22px 22px 0 0; border-bottom: 0; max-height: 88%; } }
+#sheet h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 18px 0 2px; }
+.ts-row { display: flex; gap: 10px; padding: 7px 0; align-items: flex-start; font-size: 14px; }
+.ts-row .ts-dot { margin-top: 7px; } .ts-row .ts-m { flex: 1; min-width: 0; }
+.ts-row .ts-d { color: var(--muted); overflow-wrap: anywhere; }
+.ts-row a { color: var(--text); font-size: 13px; white-space: nowrap; padding-top: 1px; }
+.ts-fixes { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
+.ts-fixmsg { font-size: 13px; color: var(--muted); padding-top: 6px; overflow-wrap: anywhere; }
+.ts-fixmsg:empty { display: none; }
+.ts-past { display: block; width: 100%; text-align: left; font-size: 14px; background: none; border: 0; padding: 7px 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-small { font-size: 12px; color: var(--muted); }
+#sheet .ts-bottom { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--wz-panel, Canvas) 14px); padding: 22px 0 max(12px, env(safe-area-inset-bottom)); margin-top: 6px; }
+#sheet .ts-bottom .ts-act { width: 100%; justify-content: center; }
+/* A diagnosed sign-in problem (#14): one step-by-step path, nothing else on screen. */
+body.ts-diagnosed #scroll, body.ts-diagnosed .ts-composer, body.ts-diagnosed footer, body.ts-diagnosed #picker, body.ts-diagnosed #pill { display: none !important; }
+body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-width: 620px; width: 100%; margin: 0 auto; }
+#reconnect h2 { font-size: 20px; line-height: 1.3; margin: 8px 0 12px; }
+#reconnect p { color: var(--muted); }
+#reconnect ol { padding-left: 3ch; margin: 18px 0; }
+#reconnect li { margin: 0 0 10px; }
+#reconnect .ts-act { display: flex; justify-content: center; width: 100%; min-height: 48px; background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+#reconnect .ts-something { display: block; margin: 24px auto 0; padding: 8px; background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <a class="ts-back" id="back" href="/wizard-os-home/" aria-label="Back to Wizard">‹</a>
+  <h1>Fix Wizard</h1>
+  <button class="ts-pill" id="pill" type="button" aria-label="Show system details"><span class="ts-dot" id="pillDot"></span><span id="pillText">Checking…</span></button>
+</header>
+
+<div id="reconnect" class="ts-signin" role="status" hidden></div>
+<div id="scroll"><div class="ts-wrap">
+  <section class="ts-welcome" id="welcome">
+    <div class="ts-big">What's wrong?</div>
+    <div class="ts-sub">Tell me and I'll fix it, even when Wizard's normal chat is down.</div>
+    <div class="ts-alert" id="alert" hidden><span class="ts-dot ts-bad"></span><span id="alertText"></span></div>
+    <div class="ts-chips" id="chips">
+      <button class="ts-chip ts-main" type="button" data-say="My Wizard is down, please fix it.">My Wizard is down</button>
+      <button class="ts-chip" type="button" data-say="My messages won't send in Wizard. Please fix it.">Messages won't send</button>
+      <button class="ts-chip" type="button" data-say="My agent isn't replying in Wizard. Please fix it.">My agent isn't replying</button>
+      <button class="ts-chip" type="button" data-say="Wizard is really slow. Please find out why and fix it.">Wizard is slow</button>
+    </div>
+  </section>
+  <div class="ts-log" id="log"></div>
+</div></div>
+
+<footer><div class="ts-dock">
+  <div class="ts-picker" id="picker" role="radiogroup" aria-label="Who answers"></div>
+  <div class="ts-composer">
+    <textarea id="input" rows="1" placeholder="Describe the problem…" aria-label="Message"></textarea>
+    <button class="ts-send" id="send" type="button" aria-label="Send">↑</button>
+  </div>
+</div></footer>
+
+<dialog id="sheet" aria-label="System details">
+  <h2>Connection to your agent</h2>
+  <div id="checks"></div>
+  <h2>Sign-ins</h2>
+  <div id="acct"></div>
+  <h2>Manual fixes</h2>
+  <div class="ts-fixes" id="fixes"></div>
+  <div class="ts-fixmsg" id="fixMsg" role="status"></div>
+  <div id="pastWrap" hidden><h2>Earlier repair chats</h2><div id="past"></div></div>
+  <div id="incWrap" hidden><h2>Recently</h2><div id="incidents"></div></div>
+  <div class="ts-bottom"><button class="ts-act" id="closeSheet" type="button">Done</button></div>
+</dialog>
+
+<script src="/wizard-os-home/core/app-client.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const md = s => esc(s).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+  const H = { 'Content-Type': 'application/json', 'X-Wizard-Troubleshoot': '1' };
+  const NAMES = { claude: 'Claude', chatgpt: 'ChatGPT', tinfoil: 'Tinfoil' };
+  const WA = window.WizardApp || null; // absent when the shell is down: the page still works, in system colours
+  // A connection app's page: same origin (/wizard-claude/), its own HTTPS port, or its App Store page when missing.
+  // Another origin opens in a new tab: the shell can't host it in its own window.
+  const appLink = (a, label, cls) => {
+    let other = false; try { other = new URL(a.open, location.href).origin !== location.origin; } catch (_) {}
+    return `<a${cls ? ` class="${cls}"` : ''} href="${esc(a.open)}" data-openapp="${esc(a.installed === false ? '' : a.appId || '')}"${other ? ' target="_blank" rel="noopener"' : ''}>${esc(label)}</a>`;
+  };
+  const CACHE = 'wizard-troubleshoot-engines'; // last known picker, painted instantly; the server holds the real choice
+  if (window.self !== window.top) document.body.classList.add('ts-hosted');
+  try { WA?.ready?.({ name: 'Troubleshooter' }); } catch {}
+
+  // Model picker: every provider, its real model in quieter text, the owner's choice saved on the server.
+  let engines = [], selected = null;
+  function paintPicker() {
+    $('picker').hidden = !engines.length;
+    $('picker').innerHTML = engines.map(a => `<button class="ts-seg${a.ok ? '' : ' ts-off'}" type="button" role="radio" data-engine="${esc(a.engine)}" aria-checked="${a.engine === selected}"${a.ok ? '' : ' aria-disabled="true"'} title="${esc(a.ok ? a.name + (a.modelLabel ? ' · ' + a.modelLabel : '') : a.reason)}"><b>${esc(a.name)}</b><small>${esc(a.ok ? (a.modelLabel || 'Ready') : a.reason)}</small></button>`).join('');
+  }
+  function setEngines(list, sel) {
+    engines = list || []; selected = sel || selected || engines.find(a => a.ok)?.engine || 'claude';
+    try { localStorage.setItem(CACHE, JSON.stringify({ engines, selected })); } catch {}
+    paintPicker();
+  }
+  try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); if (c?.engines) { engines = c.engines; selected = c.selected; paintPicker(); } } catch {}
+  async function pick(engine) {
+    if (!NAMES[engine] || engine === selected) return;
+    selected = engine; paintPicker();
+    try { await api('engine', { method: 'POST', headers: H, body: JSON.stringify({ engine }) }); setEngines(engines, engine); } catch {}
+  }
+  $('picker').addEventListener('click', e => {
+    const b = e.target.closest('[data-engine]'); if (!b || b.getAttribute('aria-disabled') === 'true') return;
+    pick(b.dataset.engine);
+  });
+  async function loadEngines() { try { const r = await api('engines'); setEngines(r.engines, r.selected); } catch {} }
+
+  // Back: one step at a time. Details sheet → chat → Wizard.
+  const sheetOpen = () => $('sheet').open;
+  $('back').addEventListener('click', e => {
+    if (sheetOpen()) { e.preventDefault(); closeSheet(); return; }
+    if (document.referrer && new URL(document.referrer).origin === location.origin && history.length > 1) { e.preventDefault(); history.back(); }
+  });
+  function openSheet() {
+    if (sheetOpen()) return;
+    $('fixMsg').textContent = '';
+    $('sheet').showModal(); history.pushState({ sheet: 1 }, '', location.href);
+    refresh(true, true); loadPast(); loadIncidents();
+  }
+  function closeSheet() { if (sheetOpen()) $('sheet').close(); }
+  // However it closes (Done, Esc, outside tap, Back), drop the sheet's own history entry.
+  $('sheet').addEventListener('close', () => { if (history.state?.sheet) history.back(); });
+  addEventListener('popstate', () => { if (sheetOpen()) $('sheet').close(); });
+  // The window's Back (shell) closes the sheet first.
+  try { WA?.back?.register?.({ canGoBack: () => sheetOpen(), back: () => { if (!sheetOpen()) return false; closeSheet(); return true; } }); } catch {}
+  $('pill').addEventListener('click', openSheet);
+  $('closeSheet').addEventListener('click', closeSheet);
+  $('sheet').addEventListener('click', e => {
+    if (e.target !== $('sheet')) return;
+    const r = $('sheet').getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closeSheet();
+  });
+
+  async function api(path, opts = {}) {
+    const r = await fetch('/troubleshoot/api/' + path, { cache: 'no-store', credentials: 'same-origin', ...opts });
+    let j = {}; try { j = await r.json(); } catch {}
+    if (!r.ok) throw Object.assign(new Error(j.error || j.detail || ('HTTP ' + r.status)), { body: j });
+    return j;
+  }
+  const when = iso => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  // A diagnosed sign-in problem: one step-by-step path. Reuses the app links; works with the normal chat down.
+  const recoveryParams = new URLSearchParams(location.search);
+  const recoveryProvider = recoveryParams.get('provider');
+  let diagnosed = ['claude', 'chatgpt'].includes(recoveryProvider) ? { engine: recoveryProvider, open: `/wizard-${recoveryProvider}/`, appId: `wizard-${recoveryProvider}`, installed: true } : null;
+  let otherProblem = false, recoverySent = false, recoveryMarkup = '';
+  function backToChat() {
+    // The shell owns the enclosing window. Never navigate the top-level document out of it.
+    if (window.parent !== window) { window.WizardApp?.nav?.back?.(); return; }
+    location.href = '/wizard-os-home/';
+  }
+  $('reconnect').addEventListener('click', e => {
+    if (e.target.closest('[data-other-problem]')) { otherProblem = true; paintReconnect(null); }
+    if (e.target.closest('[data-back-chat]')) backToChat();
+  });
+  function paintReconnect(a) {
+    if (a && ['claude', 'chatgpt'].includes(a.engine)) diagnosed = a;
+    const focused = diagnosed && !otherProblem;
+    document.body.classList.toggle('ts-diagnosed', !!focused);
+    $('reconnect').hidden = !focused;
+    if (!focused) return;
+    const name = NAMES[diagnosed.engine];
+    const html = recoverySent
+      ? `<h2>${esc(name)} is signed in again. Your message was sent.</h2><button type="button" class="ts-act" data-back-chat>Back to chat</button>`
+      : `<h2>${esc(name)}'s sign-in has expired</h2><p>Your Wizard can't send messages to ${esc(name)} until you sign in again.</p><ol><li>Tap Sign in to ${esc(name)}.</li><li>Sign in on the page that opens.</li><li>Come back here. Your waiting message sends on its own.</li></ol>${appLink(diagnosed, `Sign in to ${name}`, 'ts-act')}<button type="button" class="ts-something" data-other-problem>Something else is wrong</button>`;
+    if (html !== recoveryMarkup) { recoveryMarkup = html; $('reconnect').innerHTML = html; }
+  }
+  async function pollRecovery() {
+    if (!diagnosed || otherProblem || recoverySent) return;
+    const runId = recoveryParams.get('run_id');
+    if (!runId) return;
+    try {
+      const r = await fetch('/wizard/v1/provider-recovery?run_id=' + encodeURIComponent(runId), { cache: 'no-store', credentials: 'same-origin' });
+      if (r.ok && (await r.json()).sent) { recoverySent = true; paintReconnect(null); }
+    } catch {}
+  }
+  setInterval(pollRecovery, 1000);
+  paintReconnect(null);
+
+  // Status: one pill in the header, details on tap.
+  let actions = {}, lastStatus = null;
+  function paintStatus(s) {
+    lastStatus = s; actions = s.actions || actions;
+    const bad = s.checks.filter(c => !c.ok && !c.skipped);
+    $('pillDot').className = 'ts-dot ts-' + (s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'warn' : 'bad');
+    $('pillText').textContent = s.overall === 'ok' ? 'All working' : bad.length === 1 ? bad[0].label + ': problem' : bad.length + ' problems';
+    $('alert').hidden = s.overall === 'ok' || !bad.length;
+    if (bad.length) $('alertText').textContent = `I can already see a problem with ${bad[0].label.replace(/^Your /, 'your ')}: ${String(bad[0].detail || '').replace(/\.$/, '').toLowerCase()}. Tap below and I'll fix it.`;
+    $('checks').innerHTML = s.checks.map(c => `<div class="ts-row"><span class="ts-dot ${c.skipped ? '' : c.ok ? (c.slow ? 'ts-warn' : 'ts-ok') : 'ts-bad'}"></span><div class="ts-m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="ts-d">${esc(c.detail)}</div>`}</div></div>`).join('');
+    $('fixes').innerHTML = Object.entries(actions).map(([k, a]) => `<button class="ts-act" type="button" data-act="${esc(k)}">${esc(a.label)}</button>`).join('');
+    if (s.accounts) {
+      setEngines(s.accounts, s.engine);
+      $('acct').innerHTML = s.accounts.map(a => `<div class="ts-row"><span class="ts-dot ${a.ok ? 'ts-ok' : 'ts-bad'}"></span><div class="ts-m">${esc(a.app)}<div class="ts-d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok || !a.open ? '' : appLink(a, a.installed === false ? 'Get app' : 'Sign in', '')}</div>`).join('');
+    }
+    paintReconnect(s.reconnect);
+    if (s.repair && !current) openConv(s.repair.convId);
+  }
+  async function refresh(fresh, accounts) {
+    const query = new URLSearchParams();
+    if (fresh) query.set('fresh', '1');
+    if (accounts) query.set('accounts', '1');
+    // An empty trailing ? survives some private gateways' identity rewrite as
+    // /verify? rather than /verify, so ordinary page arrival must use /status.
+    const route = 'status' + (query.size ? '?' + query : '');
+    try { paintStatus(await api(route)); if (!accounts && !running) loadEngines(); }
+    catch { $('pillDot').className = 'ts-dot ts-bad'; $('pillText').textContent = 'Can\'t check'; }
+  }
+  async function loadIncidents() {
+    try {
+      const { incidents } = await api('incidents');
+      const seen = new Set();
+      const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result'].includes(i.kind) && (i.text || i.detail))
+        .filter(i => { const k = (i.text || i.detail) + when(i.at); return !seen.has(k) && seen.add(k); }).slice(0, 8);
+      $('incWrap').hidden = !shown.length;
+      if (shown.length) $('incidents').innerHTML = shown.map(i => `<div class="ts-row"><span class="ts-dot ${i.ok === false || i.kind === 'outage' ? 'ts-bad' : 'ts-ok'}"></span><div class="ts-m"><div class="ts-d">${esc(i.text || i.detail)}</div><div class="ts-small">${esc(when(i.at))}</div></div></div>`).join('');
+    } catch {}
+  }
+  // Manual fixes: tap once to arm, tap again to run (no browser pop-ups). The result shows under the buttons.
+  let armed = null;
+  $('fixes').addEventListener('click', async e => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const a = actions[b.dataset.act] || {};
+    if (armed !== b) {
+      if (armed) { armed.textContent = armed.dataset.label; armed.classList.remove('ts-primary'); }
+      armed = b; b.dataset.label = b.textContent; b.textContent = `Tap again: ${a.label}`; b.classList.add('ts-primary');
+      $('fixMsg').textContent = a.warn || ''; return;
+    }
+    armed = null; b.classList.remove('ts-primary');
+    b.disabled = true; b.textContent = 'Working…'; $('fixMsg').textContent = '';
+    try { const r = await api('action', { method: 'POST', headers: H, body: JSON.stringify({ action: b.dataset.act }) }); paintStatus(r.status); $('fixMsg').textContent = r.detail || 'Done.'; }
+    catch (err) { $('fixMsg').textContent = err.message; }
+    finally { b.disabled = false; b.textContent = b.dataset.label || a.label; loadIncidents(); }
+  });
+
+  // Chat.
+  let current = null, seq = 0, polling = 0, running = false;
+  const log = $('log'), scroller = $('scroll');
+  const toBottom = () => requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
+  function workingRow() {
+    let w = log.querySelector('.ts-working');
+    if (!w) { w = document.createElement('div'); w.className = 'ts-working'; w.innerHTML = '<span class="ts-spin"></span><span class="ts-step">Looking into it…</span>'; }
+    log.appendChild(w); return w;
+  }
+  function paintEvent(ev) {
+    $('welcome').hidden = true;
+    if (ev.type === 'approval-result') {
+      const row = log.querySelector(`[data-approval-row="${ev.approvalId}"]`);
+      if (row) { row.querySelectorAll('button').forEach(b => b.disabled = true); row.querySelector('.ts-approval-state').textContent = ev.approved ? 'Approved' : 'Denied or expired'; }
+      return;
+    }
+    if (ev.type === 'approval') {
+      const d = document.createElement('div'); d.className = 'ts-signin'; d.dataset.approvalRow = ev.approvalId;
+      d.innerHTML = `<strong class="ts-approval-state">Owner approval required</strong><pre>${esc(ev.text)}</pre><div class="ts-acts"><button class="ts-act ts-primary" data-approval="${esc(ev.approvalId)}" data-approved="true">Approve this exact action</button><button class="ts-act" data-approval="${esc(ev.approvalId)}" data-approved="false">Deny</button></div>`;
+      log.insertBefore(d, log.querySelector('.ts-working')); return toBottom();
+    }
+    if (ev.type === 'signin') {
+      const d = document.createElement('div'); d.className = 'ts-signin';
+      const offer = ev.offer && NAMES[ev.offer] ? `<button class="ts-act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button>` : '';
+      d.innerHTML = `<span>${esc(ev.text)}</span><div class="ts-acts">${ev.open ? appLink(ev, ev.installed === false ? `Get the ${ev.app}` : `Open ${ev.app}`, 'ts-act') : ''}${offer}</div>`;
+      log.insertBefore(d, log.querySelector('.ts-working')); return toBottom();
+    }
+    if (ev.type === 'tool' || ev.type === 'status') {
+      workingRow().querySelector('.ts-step').textContent = ev.type === 'tool' ? 'Checking: ' + ev.text.replace(/^(Bash|Shell): /, '') : ev.text;
+      return toBottom();
+    }
+    const d = document.createElement('div');
+    if (ev.type === 'text') { d.className = 'ts-msg ts-' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="ts-who">${esc(NAMES[ev.engine] || 'Claude')}${ev.modelLabel ? ' · ' + esc(ev.modelLabel) : ''}</div>${md(ev.text)}` : esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
+    else if (ev.type === 'note') {
+      d.className = 'ts-note'; d.textContent = ev.text;
+      if (ev.offer && NAMES[ev.offer]) { d.className = 'ts-signin'; d.innerHTML = `<span>${esc(ev.text)}</span><div class="ts-acts"><button class="ts-act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button></div>`; }
+    }
+    else return;
+    log.insertBefore(d, log.querySelector('.ts-working')); toBottom();
+  }
+  function setRunning(on) {
+    running = on;
+    $('send').classList.toggle('ts-stop', on); $('send').textContent = on ? '■' : '↑'; $('send').setAttribute('aria-label', on ? 'Stop' : 'Send');
+    log.querySelector('.ts-after')?.remove();
+    if (on) { workingRow(); return toBottom(); }
+    log.querySelector('.ts-working')?.remove();
+    log.querySelectorAll('[data-approval-row]').forEach(row => { row.querySelectorAll('button').forEach(b => b.disabled = true); if (row.querySelector('.ts-approval-state').textContent === 'Owner approval required') row.querySelector('.ts-approval-state').textContent = 'Expired'; });
+    if (current && log.children.length) {
+      const a = document.createElement('div'); a.className = 'ts-after';
+      a.innerHTML = '<button class="ts-chip" type="button" data-say="Thanks, it works now.">It works now</button><button class="ts-chip" type="button" data-say="It\'s still not working.">Still not working</button><button class="ts-chip" type="button" data-new="1">Something else</button>';
+      log.appendChild(a); toBottom();
+    }
+  }
+  async function poll() {
+    if (!current) return;
+    try {
+      const r = await api(`repair/${current}?since=${seq}`);
+      for (const ev of r.events) { seq = ev.seq; paintEvent(ev); }
+      if (r.running) { if (!running) setRunning(true); polling = setTimeout(poll, 1500); return; }
+      setRunning(false); refresh(true);
+    } catch { polling = setTimeout(poll, 4000); }
+  }
+  function openConv(id) { clearTimeout(polling); current = id; seq = 0; log.innerHTML = ''; history.replaceState(history.state, '', '#r=' + id); poll(); }
+  function newChat() {
+    clearTimeout(polling); current = null; seq = 0; log.innerHTML = ''; $('welcome').hidden = false;
+    history.replaceState(history.state, '', location.pathname + location.search); setRunning(false); refresh(true);
+  }
+  async function say(message) {
+    message = String(message || '').trim(); if (!message || running) return;
+    // Hand the agent what the checks already know so it starts from evidence.
+    const ctx = lastStatus && lastStatus.overall !== 'ok' ? `\n\n[Automatic check right now: ${lastStatus.checks.filter(c => !c.ok && !c.skipped).map(c => `${c.label}: ${c.detail}`).join('; ')}]` : '';
+    paintEvent({ type: 'text', role: 'owner', text: message }); setRunning(true);
+    $('input').value = ''; autosize();
+    try {
+      const r = await api('repair', { method: 'POST', headers: H, body: JSON.stringify({ id: current, message: message + ctx, engine: selected || 'auto' }) });
+      if (r.id !== current) { current = r.id; seq = 0; history.replaceState(history.state, '', '#r=' + r.id); }
+      seq += 1; // the server's copy of our message; already painted
+      poll();
+    } catch (e) { setRunning(false); $('input').value = message; paintEvent({ type: 'note', text: e.message }); }
+  }
+  document.addEventListener('click', e => {
+    const approval = e.target.closest('[data-approval]');
+    if (approval) {
+      const row = approval.closest('[data-approval-row]'); row.querySelectorAll('button').forEach(b => b.disabled = true);
+      api('repair/approve', { method: 'POST', headers: H, body: JSON.stringify({ id: current, approvalId: approval.dataset.approval, approved: approval.dataset.approved === 'true' }) }).catch(err => { row.querySelector('.ts-approval-state').textContent = err.message; }); return;
+    }
+    // Inside the Wizard shell, open the connection app in its own window; on the bare page follow the link.
+    const o = e.target.closest('[data-openapp]');
+    if (o) { try { if (o.dataset.openapp && window.parent !== window && window.parent.WizOpenApp?.(o.dataset.openapp)) { e.preventDefault(); return; } } catch (_) {} return; }
+    const c = e.target.closest('[data-say]'); if (c) return say(c.dataset.say);
+    const rt = e.target.closest('[data-retry]');
+    if (rt) { // the picked engine couldn't answer: switch to the offered one and ask the same question again
+      const last = [...log.querySelectorAll('.ts-msg.ts-owner')].at(-1)?.textContent || '';
+      rt.disabled = true; pick(rt.dataset.retry).then(() => say(last)); return;
+    }
+    if (e.target.closest('[data-new]')) newChat();
+  });
+  $('send').addEventListener('click', () => running ? api('repair/stop', { method: 'POST', headers: H, body: '{}' }).catch(() => {}) : say($('input').value));
+  function autosize() { const t = $('input'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 160) + 'px'; }
+  $('input').addEventListener('input', autosize);
+  $('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer:fine)').matches) { e.preventDefault(); say($('input').value); } });
+
+  async function loadPast() {
+    try {
+      const { repairs } = await api('repairs?limit=20');
+      const others = repairs.filter(r => r.id !== current).slice(0, 8);
+      $('pastWrap').hidden = !others.length;
+      $('past').innerHTML = others.map(r => `<button class="ts-past" type="button" data-conv="${esc(r.id)}">${esc(r.first || r.title)}<div class="ts-small">${esc(when(r.updatedAt || r.createdAt))}${r.origin === 'guardian' ? ' · started automatically' : ''}</div></button>`).join('');
+    } catch {}
+  }
+  // Wait for the sheet's own history entry to pop before setting the thread's hash, or history.back() wipes it.
+  $('past').addEventListener('click', e => {
+    const b = e.target.closest('[data-conv]'); if (!b) return;
+    const id = b.dataset.conv;
+    if (history.state?.sheet) addEventListener('popstate', () => openConv(id), { once: true }); else setTimeout(() => openConv(id));
+    closeSheet();
+  });
+
+  const m = location.hash.match(/(?:r|past)=([a-f0-9]{16})/);
+  if (m) openConv(m[1]);
+  refresh(false, false);
+  loadEngines();
+  setInterval(() => { if (!document.hidden) refresh(false); }, 20000);
+})();
+</script>
+</body>
+</html>
