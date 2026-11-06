@@ -2,14 +2,15 @@
 // Wizard Guardian: runs every minute (wizard-guardian.timer), independent of the Agent Service and Hermes.
 // For each broken link it restarts the piece, undoes a fresh Agent Service update if a restart doesn't help,
 // and as a last resort starts a Troubleshooter repair through the box's Claude/ChatGPT/Tinfoil connection apps.
-// GUARDIAN_ACT=0 (or --dry-run) makes it report-only.
+// GUARDIAN_ACT=0 (or --dry-run) makes it report-only: it changes nothing, app addresses included, unless the owner
+// also sets GUARDIAN_HEAL_ADDRESSES=1.
 // Every action is logged to the incident log and reported once in the owner's Wizard thread.
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import http from 'node:http';
-import { CONFIG, CHECKS, runChecks, doAction, deployInProgress, lastAgentRelease, logIncident, run } from '../lib/checks.mjs';
+import { CONFIG, CHECKS, ACTIONS, runChecks, doAction, deployInProgress, lastAgentRelease, logIncident, run } from '../lib/checks.mjs';
 
 const STATE = path.join(CONFIG.stateDir, 'guardian.json');
 const TOKEN = path.join(CONFIG.stateDir, 'guardian.token');
@@ -111,8 +112,26 @@ async function main() {
     if (recent.length >= 1 && freshUpdate) action = `rollback:${c.id}`;
     else if (recent.length < MAX_FIXES_PER_HOUR) action = `restart:${c.id}`;
     if (!action) continue;
+    // Report-only changes nothing. The one opt-in exception is the app-address repair, and only when the owner set
+    // GUARDIAN_HEAL_ADDRESSES=1 (never with --dry-run).
     const healAnyway = def.safeFix && process.env.GUARDIAN_ACT === '0' && !process.argv.includes('--dry-run') && CONFIG.healAddressesInReportOnly;
-    if (DRY && !healAnyway) { console.log('[dry-run] would', action, 'for', c.label, '-', c.detail); if (process.env.GUARDIAN_ACT === '0' && s.fails[c.id] === (def.threshold || 2)) logIncident({ kind: 'would-fix', action, text: `Report-only: ${c.label} wasn't working (${bare(c.detail)}); the guardian would ${action.startsWith('rollback') ? 'undo the last update' : 'restart it'}.` }); continue; }
+    if (DRY && !healAnyway) {
+      console.log('[dry-run] would', action, 'for', c.label, '-', c.detail);
+      if (process.env.GUARDIAN_ACT === '0' && s.fails[c.id] === (def.threshold || 2)) {
+        const what = action.startsWith('rollback') ? 'undo the last update' : def.safeFix ? "repair it by asking the App Manager to publish the app addresses again (set GUARDIAN_HEAL_ADDRESSES=1 or turn automatic repairs on to allow it)" : 'restart it';
+        logIncident({ kind: 'would-fix', action, text: `Report-only: ${c.label} wasn't working (${bare(c.detail)}); the guardian would ${what}. Nothing was changed.` });
+      }
+      continue;
+    }
+    // No repair exists for this link right now (for example the App Manager command is missing or older than the running one).
+    if (!ACTIONS[action]) {
+      s.refusedAt ||= {};
+      if (now - (s.refusedAt[c.id] || 0) > HOUR) {
+        s.refusedAt[c.id] = now;
+        logIncident({ kind: 'repair-refused', action, text: `${c.label} wasn't working (${bare(c.detail)}) and no automatic repair was run. ${CONFIG.wamRefusal || 'No repair is available for it on this box.'}` });
+      }
+      continue;
+    }
     logIncident({ kind: 'auto-fix', action, text: `${c.label} wasn't working (${bare(c.detail)}). Wizard ${action.startsWith('rollback') ? 'is undoing the last update' : def.safeFix ? 'is repairing it' : 'is restarting it'}.` });
     const r = await doAction(action);
     recent.push(now);

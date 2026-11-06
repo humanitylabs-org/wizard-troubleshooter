@@ -5,24 +5,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { inspect, backup } from '../lib/launchers.mjs';
+import { RAW, box, fakeWam, envFor } from './helpers-box.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const RAW = 'https://box.tail1234.ts.net:9245/';
-const app = (id, url, status = 'running') => ({ id, name: id[0].toUpperCase() + id.slice(1), status, view: { url, local: 'http://127.0.0.1:9245/' } });
-
-function box({ links = '/messenger/', apps = '/messenger/', shared = apps, extra = [] } = {}) {
-  const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'app-addr-'));
-  const home = path.join(dir, 'wizard-os'), runtipi = path.join(dir, 'runtipi');
-  fs.mkdirSync(home, { recursive: true });
-  fs.mkdirSync(path.join(runtipi, 'app-data', 'wizard-os'), { recursive: true });
-  const files = { home, links: path.join(home, 'links.json'), apps: path.join(home, 'apps.json'),
-    shared: path.join(runtipi, 'app-data', 'wizard-os', 'apps.json'), lock: path.join(home, '.links.lock') };
-  fs.writeFileSync(files.links, JSON.stringify({ links: [{ id: 'messenger', open: links, url: RAW }, { id: 'files', open: '/files/' }], errors: {} }));
-  fs.writeFileSync(files.apps, JSON.stringify({ apps: [app('messenger', apps), app('files', '/files/'), ...extra] }));
-  fs.writeFileSync(files.shared, JSON.stringify({ apps: [app('messenger', shared), app('files', '/files/'), ...extra] }));
-  return { dir, home, runtipi, files, state: path.join(dir, 'state') };
-}
-
 test('healthy addresses pass and are remembered', () => {
   const b = box();
   const r = inspect(b.files, {});
@@ -74,24 +59,6 @@ test('backups keep the three files and only the latest 20', () => {
   assert.equal(fs.statSync(path.join(last.dir, 'apps.json')).mode & 0o777, 0o600);
 });
 
-// A stand-in `wam links --json` that republishes the Wizard path (what the box's wam does) or fails to.
-function fakeWam(b, fixes) {
-  const f = path.join(b.dir, 'wam');
-  const files = JSON.stringify([b.files.apps, b.files.shared]);
-  fs.writeFileSync(f, `#!${process.execPath}
-const fs = require('fs');
-fs.appendFileSync(${JSON.stringify(path.join(b.dir, 'wam-calls'))}, process.argv.slice(2).join(' ') + '\\n');
-if (${fixes}) for (const p of ${files}) { const r = JSON.parse(fs.readFileSync(p, 'utf8')); r.apps[0].view.url = '/messenger/'; fs.writeFileSync(p, JSON.stringify(r)); }
-console.log(JSON.stringify({ links: [], errors: ${fixes} ? {} : { messenger: 'kept /messenger/: existing Serve route differs' } }));
-process.exit(${fixes} ? 0 : 1);
-`);
-  fs.chmodSync(f, 0o755);
-  return f;
-}
-
-const envFor = (b, wam, extra = {}) => ({ PATH: process.env.PATH, HOME: b.dir, WIZARD_OS_HOME: b.home, RUNTIPI_ROOT: b.runtipi,
-  TROUBLESHOOT_STATE: b.state, WAM_BIN: wam, ...extra });
-
 test('repair backs up, runs the box wam links, reads the address back and logs it', () => {
   const b = box({ links: RAW, apps: RAW, shared: RAW });
   fs.mkdirSync(b.state, { recursive: true });
@@ -125,11 +92,11 @@ test('nothing wrong: the repair touches nothing', () => {
   assert.equal(fs.existsSync(path.join(b.dir, 'wam-calls')), false);
 });
 
-test('the guardian heals a downgraded address within two runs, even in report-only mode', () => {
+test('the guardian heals a downgraded address within two runs when automatic repairs are on', () => {
   const b = box();
   const wam = fakeWam(b, true);
-  // Every other link points at nothing on this test box (they fail fast and, report-only, are never acted on).
-  const env = envFor(b, wam, { GUARDIAN_ACT: '0', TS_SOCKET: path.join(b.dir, 'no.sock'), TAILSCALE_UNIT: '', GATEWAY_UNIT: '',
+  // Every other link points at nothing on this test box (they fail fast; no unit or container exists to restart).
+  const env = envFor(b, wam, { TS_SOCKET: path.join(b.dir, 'no.sock'), TAILSCALE_UNIT: '', GATEWAY_UNIT: '',
     GATEWAY_MODE: 'tailscale-serve', GATEWAY_HOST: '127.0.0.1', GATEWAY_PORT: '1', AUTH_PORT: '', SHELL_PORT: '1', SHELL_CONTAINER: '',
     AGENT_PORT: '1', AGENT_UNIT: '', AGENT_CONTAINER: '', HERMES_PORT: '1', HERMES_UNIT: '', WAS_RELEASE_ROOT: path.join(b.dir, 'none'),
     WAS_DEPLOY_BIN: path.join(b.dir, 'none') });
@@ -147,9 +114,4 @@ test('the guardian heals a downgraded address within two runs, even in report-on
   for (const f of [b.files.apps, b.files.shared]) assert.equal(JSON.parse(fs.readFileSync(f, 'utf8')).apps[0].view.url, '/messenger/');
   const kinds = fs.readFileSync(path.join(b.state, 'incidents.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l).kind);
   assert.ok(kinds.includes('auto-fix') && kinds.includes('app-addresses-repair') && kinds.includes('auto-fix-result'));
-  // GUARDIAN_HEAL_ADDRESSES=0 keeps report-only strictly report-only
-  for (const f of [b.files.apps, b.files.shared]) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replaceAll('"/messenger/"', JSON.stringify(RAW)));
-  env.GUARDIAN_HEAL_ADDRESSES = '0';
-  guard(); g = guard();
-  assert.equal(JSON.parse(g.stdout.trim().split('\n').pop()).actions.length, 0);
 });
