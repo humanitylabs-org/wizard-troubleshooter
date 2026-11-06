@@ -11,7 +11,13 @@ const files = launcherFiles();
 const remembered = loadRemembered(CONFIG.stateDir);
 const before = inspect(files, remembered);
 if (before.ok) { console.log(before.detail); process.exit(0); }
-if (!fs.existsSync(CONFIG.wam)) { console.error(`App Manager command not found (${CONFIG.wam}).`); process.exit(1); }
+if (!CONFIG.wam || !fs.existsSync(CONFIG.wam)) {
+  // No current App Manager command (none found, or only an older copy than the running App Manager): change nothing.
+  const why = CONFIG.wamRefusal || `App Manager command not found (${CONFIG.wam}).`;
+  logIncident({ kind: 'repair-refused', action: 'restart:app-addresses', text: `App addresses were not repaired. ${why}` });
+  console.error(why);
+  process.exit(1);
+}
 // A link refresh is running right now (it holds this lock): it writes the same files, so let it finish.
 if (fs.existsSync(files.lock) && !(await run('flock', ['-n', files.lock, 'true'], { timeout: 3000 })).ok) {
   console.error('App Manager is publishing app addresses right now; checking again next minute.');

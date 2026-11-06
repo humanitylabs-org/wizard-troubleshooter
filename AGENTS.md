@@ -13,7 +13,7 @@ Wizard's independent backup line: a status page, a fixed set of one-tap restarts
 
 - `server.mjs`: HTTP server, owner gate, routes (listens on 127.0.0.1:9691 under `/troubleshoot/`).
 - `web/index.html`: the whole UI in one self-contained file (markup, `:root` tokens, inline script). No external fonts or URLs.
-- `lib/`: `checks.mjs` health checks, `providers.mjs` Claude/ChatGPT/Tinfoil routing and fallback, `toolloop.mjs` shared `toolDefs()`/`callTool()`, `repair-tools.mjs` and `repair.mjs` owner-approved repair policy, `reply-health.mjs` and `agent-reply.mjs` real-reply probes, `launchers.mjs` app addresses, `codex-turn.mjs` legacy adapter.
+- `lib/`: `checks.mjs` health checks, `providers.mjs` Claude/ChatGPT/Tinfoil routing and fallback, `toolloop.mjs` shared `toolDefs()`/`callTool()`, `repair-tools.mjs` and `repair.mjs` owner-approved repair policy, `reply-health.mjs` and `agent-reply.mjs` real-reply probes, `launchers.mjs` app addresses, `wam.mjs` which App Manager command a repair may use, `codex-turn.mjs` legacy adapter.
 - `bin/`: `status.mjs`, `guardian.mjs`, `repair-app-addresses.mjs`, `repair-mcp.mjs`, `host-operations.mjs`. `deploy/`: systemd units, Caddy and Tailscale Serve snippets. `REPAIR_PROMPT.md`: the repair model's brief.
 - `tests/*.test.mjs`: one file per concern. `tests/ui/`: hermetic browser QA. Historical plan: [docs/history/PLAN.md](docs/history/PLAN.md).
 

@@ -85,11 +85,18 @@ POSTs need the private origin plus `X-Wizard-Troubleshoot: 1`. The guardian uses
   are remembered (`launchers.json` in the state dir), so a run that rewrote both files to a raw port is still caught.
   After 2 failed minutes the fix (`bin/repair-app-addresses.mjs`) backs up the three files to
   `launcher-backups/<time>/` (last 20 kept), runs the box's `wam links --json`, reads the addresses back and logs an
-  `app-addresses-repair` incident. It restarts nothing, so the guardian applies it even when report-only
-  (`GUARDIAN_HEAL_ADDRESSES=0` keeps report-only strict; `APP_ADDRESSES=0` turns the check off).
+  `app-addresses-repair` incident. It rewrites owner files, so it follows the report-only promise: with
+  `GUARDIAN_ACT=0` the guardian only logs a "would fix" incident and changes nothing, unless the owner explicitly sets
+  `GUARDIAN_HEAL_ADDRESSES=1`. With automatic repairs on it always runs. `APP_ADDRESSES=0` turns the check off.
+- **Which `wam` a repair uses** (`lib/wam.mjs`): the App Manager the box is actually running. The guardian reads the
+  checkout the `wizard-app-manager-api` service starts from, then takes a `wam` that runs that code or newer: first
+  `bin/wam` inside it, then `~/.local/bin/wam`, then `wam` on `PATH`. A frozen builder-bundle copy is never used. If the
+  only `wam` found is older than the running App Manager, the repair is refused, nothing is changed, and a plain-words
+  `repair-refused` incident says which command is stale (an old copy republished Messenger at a dead raw port on
+  2 Nov 2026). `WAM_BIN=/path/to/wam` overrides all of this and is used as given.
 
-The guardian is report-only with `GUARDIAN_ACT=0`: it logs what it would fix and never restarts, rolls back or starts a
-repair (app-address repairs excepted, see above).
+The guardian is report-only with `GUARDIAN_ACT=0`: it logs what it would fix and never restarts, rolls back, starts a
+repair or rewrites the app list.
 
 Install (Tailscale Serve box, e.g. a Runtipi/WAM Wizard): copy the units as below, then use
 `deploy/tailscale-serve/troubleshooter.conf` as the drop-in for both services (fill in the names), add
