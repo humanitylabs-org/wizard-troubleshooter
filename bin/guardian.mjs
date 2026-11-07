@@ -18,6 +18,41 @@ const MAX_FIXES_PER_HOUR = 3;
 const ROLLBACK_WINDOW = 2 * HOUR; // undo only an update installed this recently
 const AI_REPAIR_GAP = 2 * HOUR;
 const PRE_UPDATE_LOOKBACK = 6 * HOUR; // the link must have been healthy this long before an update for the update to take the blame
+const RESTART_MUST_HOLD = 30 * 60e3; // a restart that did not keep a piece working this long...
+const RESTART_PAUSE = HOUR; // ...is not repeated for this long; the guardian escalates once instead
+const BUSY_NOTE_GAP = 30 * 60e3; // at most one "Hermes is slow" note per half hour, however often it flaps
+export const BUSY_TEXT = 'Hermes is taking a long time to accept new messages; your messages are queued and will send.';
+
+// Restart-loop guard (7 Nov 2026: four Agent Service restarts in an hour while Hermes was the slow part; each one
+// cut off work in flight). If the last restart of this piece did not keep it working for 30 min, hold restarts of it
+// for the next hour. `fresh` is true only on the run that starts the hold, so the escalation happens once.
+export function restartHold(s, id, now) {
+  const hold = s.restartHold?.[id];
+  if (hold && now < hold.until) return { held: true, fresh: false, hold };
+  const last = s.lastFix?.[id];
+  if (last && now - last < RESTART_MUST_HOLD) return { held: true, fresh: true, hold: { since: now, until: now + RESTART_PAUSE, lastFix: last } };
+  return { held: false };
+}
+
+// Busy = the piece answers but is waiting on Hermes (see lib/checks.mjs). One plain note when it starts and one
+// when it ends, never one a minute. Returns the notes to log.
+export function busyNotes(s, checks, now) {
+  const busy = checks.filter(c => c.busy);
+  const notes = [];
+  if (busy.length) {
+    s.busy ||= { since: now, noted: false };
+    if (!s.busy.noted && now - (s.busyNotedAt || 0) >= BUSY_NOTE_GAP) {
+      s.busy.noted = true;
+      s.busyNotedAt = now;
+      notes.push({ kind: 'busy', checks: busy.map(c => c.id), text: BUSY_TEXT });
+    }
+  } else if (s.busy) {
+    const mins = Math.max(1, Math.round((now - s.busy.since) / 60e3));
+    if (s.busy.noted) notes.push({ kind: 'busy-ended', text: `Hermes is accepting new messages normally again (it was slow for about ${mins} min).` });
+    s.busy = null;
+  }
+  return notes;
+}
 
 // Undo an update only when the evidence says the update caused the failure: it was installed recently,
 // this link never failed in the hours before it, it is not a version we already undid or rolled back to.
@@ -72,6 +107,25 @@ const ZONE = (() => { try { return new Intl.DateTimeFormat('en-GB', { timeZone: 
 const ZONE_NAME = ZONE.split('/').pop().replace(/_/g, ' ');
 const bkk = d => new Date(d).toLocaleTimeString('en-GB', { timeZone: ZONE, hour: '2-digit', minute: '2-digit' });
 
+// The one escalation when a restart did not hold: pause restarts of this piece, then ask for a repair (or, if one
+// started recently, tell the owner). Never repeated while the pause lasts.
+async function pauseRestarts(s, c, hold, now, actionsTaken) {
+  const text = `Restarting ${c.label} at ${bkk(hold.lastFix)} (${ZONE_NAME} time) didn't keep it working (${bare(c.detail)}), so Wizard won't restart it again before ${bkk(hold.until)}.`;
+  if (DRY) { console.log(`[dry-run] would pause restarts: ${text}`); return; }
+  s.restartHold[c.id] = hold;
+  if (now - (s.lastAiRepair || 0) > AI_REPAIR_GAP) {
+    const r = await startAiRepair(`Automatic check: ${text} Find the cause, fix it, verify with the status script, and explain what you did in plain words.`);
+    if (r?.id) {
+      s.lastAiRepair = now;
+      logIncident({ kind: 'restart-paused', check: c.id, until: hold.until, conversation: r.id, text: `${text} Wizard asked your AI subscription to find the cause.` });
+      actionsTaken.push({ label: c.label, action: 'ai-repair', fixed: false, conversation: r.id });
+      return;
+    }
+  }
+  logIncident({ kind: 'restart-paused', check: c.id, until: hold.until, text: `${text} Details: /troubleshoot/` });
+  await postThread(`guardian-pause-${c.id}-${now}`, `**${text}** Details: /troubleshoot/`);
+}
+
 async function main() {
   const s = load();
   const now = Date.now();
@@ -84,13 +138,23 @@ async function main() {
   s.probeSeen ||= {};
   s.failTimes ||= {};
   s.rolledBackTo ||= {};
+  s.lastFix ||= {};
+  s.restartHold ||= {};
+  for (const [id, hold] of Object.entries(s.restartHold)) if (now >= hold.until) delete s.restartHold[id];
   for (const c of status.checks) {
-    if (!c.ok) s.failTimes[c.id] = [...(s.failTimes[c.id] || []).filter(t => now - t < PRE_UPDATE_LOOKBACK + ROLLBACK_WINDOW), now];
-    if (c.ok) s.fails[c.id] = 0;
+    // Busy is not broken: it never counts toward a restart or takes the blame for an update.
+    if (!c.ok && !c.busy) s.failTimes[c.id] = [...(s.failTimes[c.id] || []).filter(t => now - t < PRE_UPDATE_LOOKBACK + ROLLBACK_WINDOW), now];
+    if (c.ok || c.busy) s.fails[c.id] = 0;
     else if (!byId[c.id].replyProbe || (c.checkedAt && s.probeSeen[c.id] !== c.checkedAt)) s.fails[c.id] = (s.fails[c.id] || 0) + 1;
     if (c.checkedAt) s.probeSeen[c.id] = c.checkedAt;
   }
-  const isCoreFailure = c => !c.ok && !byId[c.id].noAutoFix && (c.id !== 'agent-reply' || s.fails[c.id] >= 2);
+  for (const note of busyNotes(s, status.checks, now)) {
+    console.log(`${DRY ? '[dry-run] ' : ''}${note.text}`);
+    if (!process.argv.includes('--dry-run')) logIncident(note);
+  }
+  for (const c of status.checks.filter(c => c.busy)) console.log(`${DRY ? '[dry-run] ' : ''}busy, not restarting: ${c.label} - ${c.detail}`);
+
+  const isCoreFailure = c => !c.ok && !c.busy && !byId[c.id].noAutoFix && (c.id !== 'agent-reply' || s.fails[c.id] >= 2);
 
   // Outage bookkeeping (only core links count as "Wizard is down").
   const core = failing.filter(isCoreFailure);
@@ -101,6 +165,7 @@ async function main() {
 
   for (const c of failing) {
     const def = byId[c.id];
+    if (c.busy) continue; // alive and waiting on Hermes: a restart cannot help and would cut off messages being sent
     if (def.noAutoFix || c.id === 'agent-reply' || c.state === 'expired' || s.fails[c.id] < (def.threshold || 2)) continue;
     const recent = (s.fixes[c.id] || []).filter(t => now - t < HOUR);
     s.fixes[c.id] = recent;
@@ -109,13 +174,21 @@ async function main() {
     // Escalation: restart first; if a restart already failed to help and an update is fresh, undo it.
     let action = null;
     if (recent.length >= 1 && freshUpdate) action = `rollback:${c.id}`;
-    else if (recent.length < MAX_FIXES_PER_HOUR) action = `restart:${c.id}`;
+    else {
+      const guard = restartHold(s, c.id, now);
+      if (guard.held) {
+        if (guard.fresh) await pauseRestarts(s, c, guard.hold, now, actionsTaken);
+        continue;
+      }
+      if (recent.length < MAX_FIXES_PER_HOUR) action = `restart:${c.id}`;
+    }
     if (!action) continue;
     const healAnyway = def.safeFix && process.env.GUARDIAN_ACT === '0' && !process.argv.includes('--dry-run') && CONFIG.healAddressesInReportOnly;
     if (DRY && !healAnyway) { console.log('[dry-run] would', action, 'for', c.label, '-', c.detail); if (process.env.GUARDIAN_ACT === '0' && s.fails[c.id] === (def.threshold || 2)) logIncident({ kind: 'would-fix', action, text: `Report-only: ${c.label} wasn't working (${bare(c.detail)}); the guardian would ${action.startsWith('rollback') ? 'undo the last update' : 'restart it'}.` }); continue; }
     logIncident({ kind: 'auto-fix', action, text: `${c.label} wasn't working (${bare(c.detail)}). Wizard ${action.startsWith('rollback') ? 'is undoing the last update' : def.safeFix ? 'is repairing it' : 'is restarting it'}.` });
     const r = await doAction(action);
     recent.push(now);
+    s.lastFix[c.id] = now;
     if (action.startsWith('rollback') && release) {
       s.rolledBack[c.id] = release.target;
       const back = await lastAgentRelease();
@@ -171,7 +244,7 @@ async function main() {
     await postThread(`guardian-${now}`, `**Wizard fixed itself** at ${bkk(now)} (${ZONE_NAME}).\n\n${lines.join('\n')}\n\nAnything still wrong? Open the Troubleshooter: /troubleshoot/`);
   }
   save(s);
-  console.log(JSON.stringify({ overall: status.overall, failing: failing.map(f => f.id), actions: actionsTaken.map(a => `${a.action}:${a.fixed}`) }));
+  console.log(JSON.stringify({ overall: status.overall, failing: failing.map(f => f.id), busy: status.checks.filter(c => c.busy).map(c => c.id), actions: actionsTaken.map(a => `${a.action}:${a.fixed}`) }));
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${path.resolve(process.argv[1])}`).href) main().catch(e => { console.error(e); process.exit(1); });
