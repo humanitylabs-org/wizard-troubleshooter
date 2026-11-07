@@ -59,7 +59,10 @@ all be down and it still works.
 - **Guardian** (`wizard-guardian.timer`, every minute): restarts a link after 2–3 consecutive failed checks,
   undoes a fresh Agent Service update if a restart doesn't help, and after ~6 failed minutes starts a repair
   chat itself. It waits while an Agent Service deploy holds `deploy.lock`, caps restarts at 3/hour per link,
-  and reports once into the owner's Wizard thread (`GUARDIAN_THREAD`). Optional, off by default (`TROUBLESHOOTER_REPLY_PROBES=1`): it also sends a tiny real message through
+  and if a restart did not keep a link working for 30 min it does not restart that link again for an hour,
+  escalating once instead. An Agent Service that answers its front page but is slow with its health check, or
+  whose health says Hermes is slow to accept new messages (`queue.hermes_slow_to_accept`), is *busy*, not down:
+  never restarted and logged once per episode. It reports once into the owner's Wizard thread (`GUARDIAN_THREAD`). Optional, off by default (`TROUBLESHOOTER_REPLY_PROBES=1`): it also sends a tiny real message through
   the main agent (`Your agent can reply`) and every connected repair engine. An HTTP 200 response containing
   a provider-auth failure is a failed reply, not a healthy service. Healthy results are shared for ten minutes;
   failures retry each minute. `GET /api/status?fresh=1` forces a new check. After two distinct failed main-agent
