@@ -22,6 +22,19 @@ const RESTART_MUST_HOLD = 30 * 60e3; // a restart that did not keep a piece work
 const RESTART_PAUSE = HOUR; // ...is not repeated for this long; the guardian escalates once instead
 const BUSY_NOTE_GAP = 30 * 60e3; // at most one "Hermes is slow" note per half hour, however often it flaps
 export const BUSY_TEXT = 'Hermes is taking a long time to accept new messages; your messages are queued and will send.';
+const STALL_ASK_AFTER = 5 * 60e3; // replies not starting this long, and the repair chat has not cleared it: ask the owner
+
+// Replies not starting while Hermes says it is fine (8 Nov 2026). The guardian never restarts Hermes for this
+// (that interrupts every agent's work). First the repair chat looks for the cause; if replies still are not
+// starting 5 min in, one message asks the owner to confirm the restart on the Troubleshooter page. Returns what to do.
+export function stallSteps(s, check, now, repairFree) {
+  if (!check || check.ok) { const ended = s.stall; s.stall = null; return ended ? [{ step: 'ended', since: ended.since }] : []; }
+  s.stall ||= { since: now };
+  const steps = [];
+  if (!s.stall.repairAsked && repairFree) { s.stall.repairAsked = now; steps.push({ step: 'repair' }); }
+  if (!s.stall.ownerAsked && now - s.stall.since >= STALL_ASK_AFTER) { s.stall.ownerAsked = now; steps.push({ step: 'ask-owner' }); }
+  return steps;
+}
 
 // Restart-loop guard (7 Nov 2026: four Agent Service restarts in an hour while Hermes was the slow part; each one
 // cut off work in flight). If the last restart of this piece did not keep it working for 30 min, hold restarts of it
@@ -154,13 +167,15 @@ async function main() {
   }
   for (const c of status.checks.filter(c => c.busy)) console.log(`${DRY ? '[dry-run] ' : ''}busy, not restarting: ${c.label} - ${c.detail}`);
 
-  const isCoreFailure = c => !c.ok && !c.busy && !byId[c.id].noAutoFix && (c.id !== 'agent-reply' || s.fails[c.id] >= 2);
+  const isCoreFailure = c => !c.ok && !c.busy && (byId[c.id].incident || (!byId[c.id].noAutoFix && (c.id !== 'agent-reply' || s.fails[c.id] >= 2)));
 
   // Outage bookkeeping (only core links count as "Wizard is down").
   const core = failing.filter(isCoreFailure);
   if (core.length && !s.outage) {
     s.outage = { since: now, first: core.map(c => `${c.label}: ${c.detail}`) };
-    logIncident({ kind: 'outage', text: core.some(c => c.id === 'agent-reply') ? `Wizard can't reply: ${bare(core.find(c => c.id === 'agent-reply').detail)}` : `Problem found: ${core.map(c => `${c.label} (${bare(c.detail)})`).join('; ')}` });
+    const stalled = core.find(c => c.id === 'replies-start');
+    logIncident({ kind: 'outage', text: core.some(c => c.id === 'agent-reply') ? `Wizard can't reply: ${bare(core.find(c => c.id === 'agent-reply').detail)}`
+      : stalled ? `Replies aren't starting: ${bare(stalled.detail)}` : `Problem found: ${core.map(c => `${c.label} (${bare(c.detail)})`).join('; ')}` });
   }
 
   for (const c of failing) {
@@ -211,6 +226,22 @@ async function main() {
   if (replyDown && !DRY && !s.outage?.repairStarted) {
     const r = await startAiRepair(`Wizard can't reply: ${replyDown.detail} Check which sign-in expired. Do not restart services to fix a sign-in. Explain how to reconnect through the connection app from the phone. Do not change credentials.`);
     if (r?.id) { s.lastAiRepair = now; s.outage.repairStarted = r.id; logIncident({ kind: 'repair-started', conversation: r.id, text: `Wizard can't reply. A backup repair chat has started; sign in again from the Troubleshooter.` }); }
+  }
+
+  // Replies not starting while Hermes looks healthy: the repair chat first, the owner only for the restart itself.
+  const stall = status.checks.find(c => c.id === 'replies-start');
+  for (const { step } of stallSteps(s, stall && !stall.ok ? stall : null, now, now - (s.lastAiRepair || 0) > AI_REPAIR_GAP)) {
+    if (step === 'ended') continue; // the outage bookkeeping below logs the recovery
+    if (DRY) { console.log(`[dry-run] replies not starting: would ${step}`); continue; }
+    if (step === 'repair') {
+      const r = await startAiRepair(`Automatic check: replies are not starting. ${stall.detail} Hermes answers its health check, so a restart is not automatic. Look for the cause (Hermes logs, disk and memory, check_status). If nothing else clears it, propose run_fix restart:hermes and wait for the owner to confirm it. Explain in plain words.`);
+      if (r?.id) { s.lastAiRepair = now; s.stall.repair = r.id; logIncident({ kind: 'repair-started', conversation: r.id, text: `Replies aren't starting. Wizard asked your AI subscription to find out why.` }); }
+    } else if (step === 'ask-owner') {
+      const mins = Math.max(1, Math.round((now - s.stall.since) / 60e3));
+      const text = `Replies haven't started for ${mins} min, though your agent says it is fine. Open the Troubleshooter and tap Restart your agent (Hermes) to confirm: /troubleshoot/`;
+      logIncident({ kind: 'outage', text });
+      if (await postThread(`guardian-stall-${s.stall.since}`, `**${text}**`) && s.outage) s.outage.reported = true; // the recovery note follows
+    }
   }
 
   // Last resort for infrastructure: shared repair tools, never unapproved server access.
