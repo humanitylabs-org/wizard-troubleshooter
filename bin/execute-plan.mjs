@@ -8,8 +8,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
-import { digestOf, normalizePlan, pathRefusal, plansOn } from '../lib/repair-plan.mjs';
+import { digestOf, normalizePlan, backupTargets, plansOn } from '../lib/repair-plan.mjs';
 import { CONFIG, logIncident } from '../lib/checks.mjs';
 
 const HOME = os.homedir();
@@ -63,30 +64,25 @@ async function health() {
   return res;
 }
 
-// Files a run step names: every token that is an existing regular file (absolute, ~/ or $HOME/), so a command's
-// edits can be undone too. Directories and huge files are not copied.
-function fileTokens(cmd) {
-  const out = new Set();
-  for (const m of cmd.matchAll(/(?:^|[\s"'=:(<>|;&])((?:~|\$HOME|\$\{HOME\})?\/[^\s"'`;&|<>()]+)/g)) {
-    const p = m[1].replace(/^(?:~|\$HOME|\$\{HOME\})(?=\/)/, HOME);
-    try { const st = fs.statSync(p); if (st.isFile() && st.size <= 20 << 20 && !pathRefusal(p)) out.add(path.resolve(p)); } catch {}
-  }
-  return [...out];
-}
 function backupAll(plan) {
-  const want = new Set();
-  for (const s of plan.steps) {
-    if (s.action === 'edit' || s.action === 'write') want.add(s.path);
-    else for (const f of fileTokens(s.command)) want.add(f);
-  }
+  const want = backupTargets(plan);
   const bdir = path.join(dir, 'backup'); fs.mkdirSync(bdir, { recursive: true, mode: 0o700 });
+  // Only a file that truly doesn't exist is recorded as new (undo removes it). Any other backup failure (full disk,
+  // permissions) stops the plan before step 1: a file we couldn't copy must never be changed or later deleted.
   return [...want].map((p, i) => {
     const b = { path: p, backup: path.join(bdir, String(i)), existed: false };
-    try { const st = fs.statSync(p); if (st.isFile()) { fs.copyFileSync(p, b.backup); fs.chmodSync(b.backup, 0o600); Object.assign(b, { existed: true, mode: st.mode & 0o7777, size: st.size }); } } catch {}
+    let st = null;
+    try { st = fs.statSync(p); } catch (e) { if (e.code !== 'ENOENT') throw new Error(`could not back up ${p}: ${e.message}`); }
+    if (st && !st.isFile()) throw new Error(`${p} is not a regular file`);
+    if (st) {
+      try { fs.copyFileSync(p, b.backup); fs.chmodSync(b.backup, 0o600); } catch (e) { throw new Error(`could not back up ${p}: ${e.message}`); }
+      Object.assign(b, { existed: true, mode: st.mode & 0o7777, size: st.size, sha256: sha(b.backup) });
+    }
     log(`backup ${p}${b.existed ? ` → ${b.backup}` : ' (does not exist yet; undo removes it)'}`);
     return b;
   });
 }
+const sha = f => { try { return crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex'); } catch { return null; } };
 function atomicWrite(p, content) {
   let mode = 0o644; try { mode = fs.statSync(p).mode & 0o7777; } catch { fs.mkdirSync(path.dirname(p), { recursive: true }); }
   const t = `${p}.repair-${process.pid}`;
@@ -104,7 +100,9 @@ async function runPlan() {
   log(`Repair plan "${plan.title}" approved by ${approval.by} at ${approval.at}; running as ${os.userInfo().username}.`);
   let failed = '';
   try { normalizePlan(plan); } catch (e) { failed = e.message; log(`REFUSED: ${e.message}`); }
-  run.backups = failed ? [] : backupAll(plan); save('run.json', run);
+  run.backups = [];
+  if (!failed) try { run.backups = backupAll(plan); } catch (e) { failed = `backup failed, nothing changed: ${e.message}`; log(`REFUSED: ${failed}`); }
+  save('run.json', run);
   for (const [i, s] of plan.steps.entries()) {
     if (failed) break;
     const n = i + 1;
@@ -145,6 +143,8 @@ async function runPlan() {
   }
   run.health = await health();
   const verified = run.verify.every(v => v.ok) && run.health.every(h => h.ok);
+  // What each file looked like when the run ended: undo only restores files nobody has changed since.
+  for (const b of run.backups) b.after = fs.existsSync(b.path) ? sha(b.path) : null;
   Object.assign(run, { state: !failed && verified ? 'succeeded' : 'failed', error: failed || (verified ? '' : 'verification failed'), verified, finishedAt: new Date().toISOString() });
   log(run.state === 'succeeded' ? 'Repair succeeded and verified.' : `Repair did not verify: ${run.error}. Undo restores the backed-up files.`);
   save('run.json', run);
@@ -160,6 +160,8 @@ async function undoRun() {
   log('Undo requested by the owner: restoring backed-up files.');
   for (const b of run.backups) {
     try {
+      const now = fs.existsSync(b.path) ? sha(b.path) : null;
+      if (b.after !== undefined && now !== b.after) { u.restored.push({ path: b.path, ok: false, error: 'changed since the repair; left as is' }); log(`left ${b.path} as is: it changed after the repair (its backup stays at ${b.backup || 'n/a'})`); continue; }
       if (b.existed) { const t = `${b.path}.undo-${process.pid}`; fs.copyFileSync(b.backup, t); fs.chmodSync(t, b.mode ?? 0o644); fs.renameSync(t, b.path); log(`restored ${b.path}`); }
       else if (fs.existsSync(b.path)) { fs.unlinkSync(b.path); log(`removed ${b.path} (it did not exist before)`); }
       u.restored.push({ path: b.path, ok: true });

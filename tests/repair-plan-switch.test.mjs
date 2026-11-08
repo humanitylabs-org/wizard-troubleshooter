@@ -104,7 +104,7 @@ test('HTTP: owner gate and page header; approve refused while off and with a wro
     assert.equal(got.state, 'proposed'); assert.equal(got.digest, rec.digest);
     assert.equal((await (await fetch(u('plans'))).json()).on, true);
     assert.equal((await fetch(u(`plan/${rec.id}/approve`), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ digest: rec.digest }) })).status, 403, 'needs the page header');
-    assert.equal((await fetch(u(`plan/${rec.id}/approve`), { method: 'POST', headers: H, body: JSON.stringify({ digest: '0'.repeat(64) }) })).status, 409);
+    { const w = await fetch(u(`plan/${rec.id}/approve`), { method: 'POST', headers: H, body: JSON.stringify({ digest: '0'.repeat(64) }) }); assert.equal(w.status, 409, await w.text()); }
     fs.writeFileSync(pol, JSON.stringify({ files: [], commands: {} })); // switched off live, no restart
     assert.equal((await (await fetch(u('plans'))).json()).on, false);
     const off = await fetch(u(`plan/${rec.id}/approve`), { method: 'POST', headers: H, body: JSON.stringify({ digest: rec.digest }) });
