@@ -10,7 +10,7 @@ import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
-import { digestOf, normalizePlan, backupTargets } from '../lib/repair-plan.mjs';
+import { digestOf, normalizePlan, backupTargets, plansOn } from '../lib/repair-plan.mjs';
 import { CONFIG, logIncident } from '../lib/checks.mjs';
 
 const HOME = os.homedir();
@@ -91,6 +91,7 @@ function atomicWrite(p, content) {
 }
 
 async function runPlan() {
+  if (!plansOn()) { log('REFUSED: repair plans are switched off (repair policy "plans": true).'); save('run.json', { state: 'failed', error: 'switched off', finishedAt: new Date().toISOString() }); process.exit(3); }
   const approval = J('approval.json');
   if (!approval || approval.digest !== rec.digest || digestOf(rec.plan) !== rec.digest) { log('REFUSED: no owner approval for this exact plan.'); save('run.json', { state: 'failed', error: 'not approved', finishedAt: new Date().toISOString() }); process.exit(3); }
   try { fs.writeFileSync(path.join(dir, 'run.json'), JSON.stringify({ state: 'running', startedAt: new Date().toISOString(), pid: process.pid }), { mode: 0o600, flag: 'wx' }); }

@@ -19,6 +19,9 @@ process.env.HOME = HOME;
 process.env.TROUBLESHOOT_STATE = path.join(root, 'state');
 process.env.REPAIR_HEALTH_URLS = ''; // no health targets in the hermetic run
 process.env.REPAIR_VERIFY_WAIT_MS = '4000';
+// The switch: repair plans are a grant in the per-box repair policy, off unless it says "plans": true.
+process.env.REPAIR_POLICY_FILE = path.join(root, 'policy.json');
+fs.writeFileSync(process.env.REPAIR_POLICY_FILE, JSON.stringify({ files: [], commands: {}, plans: true }));
 const P = await import('../lib/repair-plan.mjs');
 
 const launched = [];

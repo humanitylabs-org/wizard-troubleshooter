@@ -12,7 +12,9 @@ function hermetic(state, extra = {}) {
   const home = path.join(state, 'home'); fs.mkdirSync(home, { recursive: true });
   const base = { ...process.env };
   for (const k of Object.keys(base)) if (/^(TROUBLESHOOT_|GUARDIAN_|WAS_|TS_|TAILSCALE_|GATEWAY_|AUTH_|SHELL_|AGENT_|HERMES_|CLAUDE_|CHATGPT_|TINFOIL_|WIZARD_|DOCKER_|REPAIR_)/.test(k)) delete base[k];
-  return { ...base, HOME: home, TROUBLESHOOT_STATE: state, TS_SOCKET: path.join(state, 'no.sock'), WAS_RELEASE_ROOT: path.join(state, 'r'), WAS_DEPLOY_BIN: path.join(state, 'no'),
+  const policy = path.join(state, 'policy.json'); // repair plans switched on, as on James's box
+  if (!fs.existsSync(policy)) fs.writeFileSync(policy, JSON.stringify({ files: [], commands: {}, plans: true }));
+  return { ...base, HOME: home, TROUBLESHOOT_STATE: state, REPAIR_POLICY_FILE: policy, TS_SOCKET: path.join(state, 'no.sock'), WAS_RELEASE_ROOT: path.join(state, 'r'), WAS_DEPLOY_BIN: path.join(state, 'no'),
     CLAUDE_CONFIG_DIR: path.join(state, 'no-claude'), CLAUDE_BIN: '/bin/false', CHATGPT_AUTH_FILE: path.join(state, 'none.json'), TINFOIL_URL: 'http://127.0.0.1:9',
     TINFOIL_TOKEN_FILE: path.join(state, 'none.json'), TAILSCALE_UNIT: '', GATEWAY_UNIT: '', AUTH_PORT: '', DOCKER_BIN: '/bin/false', AGENT_PORT: '1', HERMES_PORT: '1', SHELL_PORT: '1', ...extra };
 }

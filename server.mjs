@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease } from './lib/checks.mjs';
 import { startRepair, loadConv, listConvs, busy, stopRepair, bridgeToken, bridgeRequest, decideApproval, attachmentFile } from './lib/repair.mjs';
-import { planState, listPlans, approvePlan, dismissPlan, undoPlan } from './lib/repair-plan.mjs';
+import { plansOn, planState, listPlans, approvePlan, dismissPlan, undoPlan } from './lib/repair-plan.mjs';
 import { toolDefs } from './lib/toolloop.mjs';
 import { allSignins, engineOrder, ENGINES, selectedEngine, saveEngine, appLink, META } from './lib/providers.mjs';
 
@@ -235,7 +235,7 @@ const handler = async (req, res) => {
       return send(res, 200, r);
     }
     // Owner-approved repair plans. Approval carries the digest of the exact plan the page showed.
-    if (req.method === 'GET' && p === '/api/plans') return send(res, 200, { plans: listPlans({ convId: url.searchParams.get('conv') || undefined, limit: 20 }) });
+    if (req.method === 'GET' && p === '/api/plans') return send(res, 200, { on: plansOn(), plans: listPlans({ convId: url.searchParams.get('conv') || undefined, limit: 20 }) });
     const pm = p.match(/^\/api\/plan\/([a-f0-9]{16})(?:\/(approve|dismiss|undo))?$/);
     if (pm && req.method === 'GET' && !pm[2]) { const st = planState(pm[1]); return st ? send(res, 200, st) : send(res, 404, { error: 'Not found' }); }
     if (pm && req.method === 'POST' && pm[2]) {
