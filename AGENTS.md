@@ -52,7 +52,7 @@ TROUBLESHOOT_DEV_NO_AUTH=1 TROUBLESHOOT_STATE=$S HOME=$S PORT=29691 node server.
 ## How a change reaches users
 
 1. A PR merges to `main`; CI runs `npm test`. There is no image or release workflow in this repo.
-2. Boxes get it from App Manager's installer, pinned to the commit named in the Wizard OS release metadata (wizard-app-manager `releases/`, gate in `wam/updates.py`). A release or pin bump is a separate, authorized change in that repo. Merging here does not update any box.
+2. Boxes get it from App Manager's installer, pinned to the commit named in the WizardOS release metadata (wizard-app-manager `releases/`, gate in `wam/updates.py`). A release or pin bump is a separate, authorized change in that repo. Merging here does not update any box.
 3. The agreed policy (boxes on plain `main` = Latest, Stable after a soak, `hotfix` skips it) is in the Team workflow below.
 
 ## Team workflow
