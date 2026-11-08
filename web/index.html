@@ -6,10 +6,11 @@
 <meta name="color-scheme" content="light dark">
 <title>Fix Wizard</title>
 <!-- Unified design: the shell's own tokens and kit, so the page follows the selected skin (and My skin) like every
-     other app. WizardApp (app-client.js) pushes live skin changes and layers the skin stylesheets. When the shell is
-     down these requests fail and the page falls back to the system colours below: it must keep working then. -->
-<link rel="stylesheet" href="/wizard-os-home/kit/wizard-tokens.css" data-wz-shared="tokens">
-<link rel="stylesheet" href="/wizard-os-home/kit/wizard-ui.css" data-wz-shared="kit">
+     other app. WizardApp (app-client.js) pushes live skin changes and layers the skin stylesheets. This service reads
+     the kit from the shell's files on disk (/troubleshoot/kit/), so the page never waits on the shell or Agent
+     Service process; when the files are missing it falls back to the system colours below and keeps working. -->
+<link rel="stylesheet" href="/troubleshoot/kit/wizard-tokens.css" data-wz-shared="tokens">
+<link rel="stylesheet" href="/troubleshoot/kit/wizard-ui.css" data-wz-shared="kit">
 <style>
 /* Only aliases onto the shared roles (--wz-*); the fallbacks are system colours for when the shell is unreachable. */
 :root {
@@ -44,6 +45,7 @@ a.ts-back { color: var(--text); text-decoration: none; font-size: 24px; line-hei
 .ts-welcome { margin-top: auto; padding: 0 0 8px; }
 .ts-welcome .ts-big { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
 .ts-welcome .ts-sub { color: var(--muted); font-size: 15px; }
+.ts-welcome .ts-sub2 { font-size: 13px; margin-top: 6px; }
 .ts-welcome .ts-alert { margin-top: 14px; font-size: 14px; display: flex; gap: 10px; }
 .ts-welcome .ts-alert span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .ts-welcome .ts-alert .ts-dot { margin-top: 7px; }
@@ -86,6 +88,29 @@ textarea:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent
 button.ts-send { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); font-size: 19px; font-weight: 700; cursor: pointer; }
 button.ts-send.ts-stop { background: var(--fill2); color: var(--text); font-size: 14px; }
 button:disabled { opacity: .5; cursor: default; }
+button.ts-send.ts-fixit { width: auto; padding: 0 16px; border-radius: 22px; font-size: 15px; font-weight: 600; }
+button.ts-clip { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--fill); color: var(--text); cursor: pointer; display: grid; place-items: center; padding: 0; }
+button.ts-clip svg { width: 20px; height: 20px; }
+.ts-thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+.ts-thumbs:empty { display: none; }
+.ts-thumb { position: relative; width: 64px; height: 64px; border-radius: var(--radius-tile); overflow: hidden; border: 1px solid var(--line); background: var(--fill); }
+.ts-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ts-thumb button { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: var(--wz-panel, Canvas); color: var(--text); font-size: 14px; line-height: 1; cursor: pointer; padding: 0; }
+.ts-msg .ts-pics { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.ts-msg .ts-pics img { max-width: 160px; max-height: 160px; border-radius: 10px; display: block; cursor: zoom-in; }
+/* A repair plan the AI proposed: exactly what will run, one tap to approve. Fully opaque (text-bearing panel). */
+.ts-plan { background: var(--wz-panel, Canvas); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.ts-plan .ts-plan-h { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.ts-plan h3 { margin: 0; font-size: 17px; line-height: 1.3; }
+.ts-plan p { margin: 0; font-size: 14px; }
+.ts-plan ol { margin: 0; padding-left: 3ch; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.ts-plan pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; margin: 4px 0 0; padding: 8px 10px; background: var(--fill); border-radius: var(--radius-tile); font: 12.5px/1.4 var(--wz-font-mono, ui-monospace, monospace); }
+.ts-plan pre.ts-del { border-left: 3px solid var(--bad); } .ts-plan pre.ts-add { border-left: 3px solid var(--ok); }
+.ts-plan .ts-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.ts-plan .ts-acts .ts-act.ts-primary { flex: 1; justify-content: center; min-width: 180px; }
+.ts-plan .ts-state { font-size: 14px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.ts-plan details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.ts-plan .ts-safe { font-size: 12px; color: var(--muted); }
 /* Details: the one pop-up, a native dialog in the shared sheet's look. */
 dialog#sheet { color: var(--text); background: var(--wz-panel, Canvas); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 16px 0; width: min(560px, calc(100% - 24px)); max-width: none; max-height: 85%; overflow-y: auto; }
 dialog#sheet::backdrop { background: color-mix(in srgb, var(--wz-base, Canvas) 70%, transparent); }
@@ -125,6 +150,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   <section class="ts-welcome" id="welcome">
     <div class="ts-big">What's wrong?</div>
     <div class="ts-sub">Tell me and I'll fix it, even when Wizard's normal chat is down.</div>
+    <div class="ts-sub ts-sub2">Attach a screenshot if it helps. When a fix needs more than a restart, I'll show you the exact repair first; nothing changes until you tap Approve.</div>
     <div class="ts-alert" id="alert" hidden><span class="ts-dot ts-bad"></span><span id="alertText"></span></div>
     <div class="ts-chips" id="chips">
       <button class="ts-chip ts-main" type="button" data-say="My Wizard is down, please fix it.">My Wizard is down</button>
@@ -138,9 +164,12 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
 
 <footer><div class="ts-dock">
   <div class="ts-picker" id="picker" role="radiogroup" aria-label="Who answers"></div>
+  <div class="ts-thumbs" id="thumbs" aria-label="Attached screenshots"></div>
   <div class="ts-composer">
-    <textarea id="input" rows="1" placeholder="Describe the problem…" aria-label="Message"></textarea>
-    <button class="ts-send" id="send" type="button" aria-label="Send">↑</button>
+    <button class="ts-clip" id="clip" type="button" aria-label="Attach a screenshot" title="Attach a screenshot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="m21 16-5-5-8 8"/></svg></button>
+    <input type="file" id="file" accept="image/*" multiple hidden>
+    <textarea id="input" rows="1" placeholder="Describe the problem…" aria-label="Describe the problem"></textarea>
+    <button class="ts-send ts-fixit" id="send" type="button" aria-label="Fix it">Fix it</button>
   </div>
 </div></footer>
 
@@ -157,7 +186,11 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   <div class="ts-bottom"><button class="ts-act" id="closeSheet" type="button">Done</button></div>
 </dialog>
 
-<script src="/wizard-os-home/core/app-client.js"></script>
+<script src="/troubleshoot/kit/app-client.js"></script>
+<script>
+// Tell a framing Wizard shell that the real repair page loaded (it can't inspect a cross-origin direct-line frame).
+try { if (window.parent !== window) window.parent.postMessage({ type: 'wizard-troubleshooter:ready' }, '*'); } catch (e) {}
+</script>
 <script>
 (() => {
   const $ = id => document.getElementById(id);
@@ -303,7 +336,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     try {
       const { incidents } = await api('incidents');
       const seen = new Set();
-      const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result'].includes(i.kind) && (i.text || i.detail))
+      const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result', 'repair-plan-result', 'repair-plan-undo-result'].includes(i.kind) && (i.text || i.detail))
         .filter(i => { const k = (i.text || i.detail) + when(i.at); return !seen.has(k) && seen.add(k); }).slice(0, 8);
       $('incWrap').hidden = !shown.length;
       if (shown.length) $('incidents').innerHTML = shown.map(i => `<div class="ts-row"><span class="ts-dot ${i.ok === false || i.kind === 'outage' ? 'ts-bad' : 'ts-ok'}"></span><div class="ts-m"><div class="ts-d">${esc(i.text || i.detail)}</div><div class="ts-small">${esc(when(i.at))}</div></div></div>`).join('');
@@ -358,7 +391,8 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
       return toBottom();
     }
     const d = document.createElement('div');
-    if (ev.type === 'text') { d.className = 'ts-msg ts-' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="ts-who">${esc(NAMES[ev.engine] || 'Claude')}${ev.modelLabel ? ' · ' + esc(ev.modelLabel) : ''}</div>${md(ev.text)}` : esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
+    if (ev.type === 'plan') { paintPlan(ev.planId); return; }
+    if (ev.type === 'text') { d.className = 'ts-msg ts-' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="ts-who">${esc(NAMES[ev.engine] || 'Claude')}${ev.modelLabel ? ' · ' + esc(ev.modelLabel) : ''}</div>${md(ev.text)}` : (ev.images?.length ? `<div class="ts-pics">${ev.images.map(i => ev.local ? `<img alt="Screenshot" src="${esc(i.src)}">` : `<img alt="Screenshot" src="/troubleshoot/api/attachment/${esc(current)}/${esc(i.id)}">`).join('')}</div>` : '') + esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
     else if (ev.type === 'note') {
       d.className = 'ts-note'; d.textContent = ev.text;
       if (ev.offer && NAMES[ev.offer]) { d.className = 'ts-signin'; d.innerHTML = `<span>${esc(ev.text)}</span><div class="ts-acts"><button class="ts-act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button></div>`; }
@@ -368,7 +402,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
   }
   function setRunning(on) {
     running = on;
-    $('send').classList.toggle('ts-stop', on); $('send').textContent = on ? '■' : '↑'; $('send').setAttribute('aria-label', on ? 'Stop' : 'Send');
+    $('send').classList.toggle('ts-stop', on); $('send').textContent = on ? 'Stop' : 'Fix it'; $('send').setAttribute('aria-label', on ? 'Stop' : 'Fix it');
     log.querySelector('.ts-after')?.remove();
     if (on) { workingRow(); return toBottom(); }
     log.querySelector('.ts-working')?.remove();
@@ -394,18 +428,90 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     history.replaceState(history.state, '', location.pathname + location.search); setRunning(false); refresh(true);
   }
   async function say(message) {
-    message = String(message || '').trim(); if (!message || running) return;
+    message = String(message || '').trim();
+    const images = pending.slice();
+    if ((!message && !images.length) || running) return;
+    if (!message) message = 'Here is a screenshot of the problem.';
     // Hand the agent what the checks already know so it starts from evidence.
     const ctx = lastStatus && lastStatus.overall !== 'ok' ? `\n\n[Automatic check right now: ${lastStatus.checks.filter(c => !c.ok && !c.skipped).map(c => `${c.label}: ${c.detail}`).join('; ')}]` : '';
-    paintEvent({ type: 'text', role: 'owner', text: message }); setRunning(true);
-    $('input').value = ''; autosize();
+    paintEvent({ type: 'text', role: 'owner', text: message, local: true, images: images.map(i => ({ src: i.dataUrl })) }); setRunning(true);
+    $('input').value = ''; autosize(); pending = []; paintThumbs();
     try {
-      const r = await api('repair', { method: 'POST', headers: H, body: JSON.stringify({ id: current, message: message + ctx, engine: selected || 'auto' }) });
+      const r = await api('repair', { method: 'POST', headers: H, body: JSON.stringify({ id: current, message: message + ctx, engine: selected || 'auto', ...(images.length ? { images: images.map(i => ({ dataUrl: i.dataUrl, name: i.name })) } : {}) }) });
       if (r.id !== current) { current = r.id; seq = 0; history.replaceState(history.state, '', '#r=' + r.id); }
       seq += 1; // the server's copy of our message; already painted
       poll();
-    } catch (e) { setRunning(false); $('input').value = message; paintEvent({ type: 'note', text: e.message }); }
+    } catch (e) { setRunning(false); $('input').value = message; pending = images; paintThumbs(); paintEvent({ type: 'note', text: e.message }); }
   }
+
+  // Screenshots: pick, paste or drop up to four images. Big ones are scaled down on the device first.
+  let pending = [];
+  function paintThumbs() {
+    $('thumbs').innerHTML = pending.map((p, i) => `<div class="ts-thumb"><img alt="Screenshot ${i + 1}" src="${esc(p.dataUrl)}"><button type="button" data-unattach="${i}" aria-label="Remove screenshot ${i + 1}">×</button></div>`).join('');
+  }
+  const readAsDataUrl = f => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => no(r.error); r.readAsDataURL(f); });
+  async function shrink(file) {
+    const raw = await readAsDataUrl(file);
+    if (file.size < 1.5e6 && /^data:image\/(png|jpeg|webp|gif);/.test(raw)) return raw;
+    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = raw; });
+    const k = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.85);
+  }
+  async function attach(files) {
+    for (const f of [...files].filter(f => /^image\//.test(f.type))) {
+      if (pending.length >= 4) { paintEvent({ type: 'note', text: 'Up to four screenshots per message.' }); break; }
+      try { pending.push({ name: f.name || 'screenshot', dataUrl: await shrink(f) }); } catch { paintEvent({ type: 'note', text: `Couldn't read ${f.name || 'that image'}.` }); }
+    }
+    paintThumbs();
+  }
+  $('clip').addEventListener('click', () => $('file').click());
+  $('file').addEventListener('change', e => { attach(e.target.files || []); e.target.value = ''; });
+  $('thumbs').addEventListener('click', e => { const b = e.target.closest('[data-unattach]'); if (b) { pending.splice(+b.dataset.unattach, 1); paintThumbs(); } });
+  $('input').addEventListener('paste', e => { const fs = [...(e.clipboardData?.files || [])].filter(f => /^image\//.test(f.type)); if (fs.length) { e.preventDefault(); attach(fs); } });
+  document.addEventListener('dragover', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+  document.addEventListener('drop', e => { const fs = e.dataTransfer?.files; if (fs?.length) { e.preventDefault(); attach(fs); } });
+
+  // Repair plans: the AI's concrete fix, shown exactly as it will run. One tap approves this exact plan (its
+  // digest goes back with the tap); then it runs on the server in its own process and this card follows it live.
+  const planTimers = new Map();
+  const STATE = { proposed: ['Waiting for your approval', ''], starting: ['Starting…', 'ts-warn'], running: ['Running…', 'ts-warn'], succeeded: ['Fixed and verified', 'ts-ok'], failed: ['Did not verify', 'ts-bad'], dismissed: ['Not run', ''], expired: ['Expired: ask again for a fresh plan', ''], undoing: ['Undoing…', 'ts-warn'], undone: ['Undone: files restored', ''] };
+  function stepHtml(s) {
+    const why = s.why ? `<div>${esc(s.why)}</div>` : '';
+    if (s.action === 'run') return `<li>${why}<pre>$ ${esc(s.command)}</pre></li>`;
+    if (s.action === 'edit') return `<li>${why}<div class="ts-small">Edit ${esc(s.path)}</div><pre class="ts-del">${esc(s.find)}</pre><pre class="ts-add">${esc(s.replace)}</pre></li>`;
+    return `<li>${why}<div class="ts-small">Replace the whole file ${esc(s.path)}</div><pre class="ts-add">${esc(s.content.length > 4000 ? s.content.slice(0, 4000) + '\n…' : s.content)}</pre></li>`;
+  }
+  async function paintPlan(id) {
+    let card = log.querySelector(`[data-plan="${id}"]`);
+    if (!card) { card = document.createElement('div'); card.className = 'ts-plan'; card.dataset.plan = id; card.innerHTML = '<div class="ts-plan-h"><span class="ts-spin"></span>Loading the repair plan…</div>'; log.insertBefore(card, log.querySelector('.ts-working')); toBottom(); }
+    let p; try { p = await api('plan/' + id); } catch (e) { card.querySelector('.ts-plan-h').textContent = 'Could not load this repair plan: ' + e.message; return; }
+    const [label, dot] = STATE[p.state] || [p.state, ''];
+    const live = ['starting', 'running', 'undoing'].includes(p.state);
+    const health = (p.undo?.health || p.run?.health || []).map(h => `<div class="ts-row"><span class="ts-dot ${h.ok ? 'ts-ok' : 'ts-bad'}"></span><div class="ts-m">${esc(h.name)}</div></div>`).join('');
+    const acts = p.state === 'proposed'
+      ? `<div class="ts-acts"><button class="ts-act ts-primary" type="button" data-plan-approve="${esc(id)}" data-digest="${esc(p.digest)}">Approve and run</button><button class="ts-act" type="button" data-plan-dismiss="${esc(id)}">Don't run</button></div><div class="ts-safe">Runs on your Wizard server with full access. Every file it changes is backed up first and can be undone.</div>`
+      : ['succeeded', 'failed'].includes(p.state) && p.run?.backups?.some(b => b.existed || b.path) ? `<div class="ts-acts"><button class="ts-act" type="button" data-plan-undo="${esc(id)}">Undo file changes</button></div>` : '';
+    const html = `<div class="ts-plan-h">Repair plan${p.engine ? ' from ' + esc(NAMES[p.engine] || p.engine) : ''}</div><h3>${esc(p.plan.title)}</h3><p>${md(p.plan.diagnosis)}</p>`
+      + `<ol>${p.plan.steps.map(stepHtml).join('')}</ol>`
+      + (p.plan.verify?.length ? `<div class="ts-small">Then checks: ${p.plan.verify.map(c => `<code>${esc(c)}</code>`).join(', ')}, plus Hermes and Wizard health.</div>` : `<div class="ts-small">Then checks Hermes and Wizard health.</div>`)
+      + `<div class="ts-state">${live ? '<span class="ts-spin"></span>' : `<span class="ts-dot ${dot}"></span>`}${esc(label)}${p.run?.error && p.state === 'failed' ? ': ' + esc(p.run.error) : ''}</div>${health}`
+      + (p.transcript ? `<details${live ? ' open' : ''}><summary>What it did</summary><pre>${esc(p.transcript)}</pre></details>` : '') + acts;
+    if (card.dataset.html !== html) { card.dataset.html = html; card.innerHTML = html; const pre = card.querySelector('details pre'); if (pre) pre.scrollTop = pre.scrollHeight; }
+    clearTimeout(planTimers.get(id));
+    if (live) planTimers.set(id, setTimeout(() => paintPlan(id), 1500));
+  }
+  log.addEventListener('click', async e => {
+    const a = e.target.closest('[data-plan-approve],[data-plan-dismiss],[data-plan-undo]'); if (!a) return;
+    const id = a.dataset.planApprove || a.dataset.planDismiss || a.dataset.planUndo;
+    const what = a.dataset.planApprove ? 'approve' : a.dataset.planDismiss ? 'dismiss' : 'undo';
+    a.closest('.ts-acts').querySelectorAll('button').forEach(b => b.disabled = true);
+    a.textContent = what === 'approve' ? 'Starting…' : what === 'undo' ? 'Undoing…' : 'OK';
+    try { await api(`plan/${id}/${what}`, { method: 'POST', headers: H, body: JSON.stringify(what === 'approve' ? { digest: a.dataset.digest } : {}) }); }
+    catch (err) { paintEvent({ type: 'note', text: err.message }); }
+    paintPlan(id);
+  });
   document.addEventListener('click', e => {
     const approval = e.target.closest('[data-approval]');
     if (approval) {
@@ -424,6 +530,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     if (e.target.closest('[data-new]')) newChat();
   });
   $('send').addEventListener('click', () => running ? api('repair/stop', { method: 'POST', headers: H, body: '{}' }).catch(() => {}) : say($('input').value));
+  log.addEventListener('click', e => { const img = e.target.closest('.ts-pics img'); if (img) window.open(img.src, '_blank', 'noopener'); });
   function autosize() { const t = $('input'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 160) + 'px'; }
   $('input').addEventListener('input', autosize);
   $('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer:fine)').matches) { e.preventDefault(); say($('input').value); } });

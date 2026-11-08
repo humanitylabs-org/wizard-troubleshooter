@@ -24,9 +24,9 @@ test('Back to chat asks the shell to go back, never navigates the top-level shel
 test('sign-in confirmation waits for the saved resend to finish, not merely an account status',()=>{
  assert.match(page,/provider-recovery\?run_id=/);assert.match(page,/if \(r.ok && \(await r.json\(\)\).sent\)/);assert.match(page,/is signed in again\. Your message was sent/);assert.match(page,/data-back-chat>Back to chat/);
 });
-test('the page may load the shell kit and skin stylesheets (same origin only)',()=>{
+test('the page may load the shell kit and skin stylesheets (same origin only, served by this service from disk)',()=>{
  const src=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
- assert.match(src,/style-src 'self' 'unsafe-inline'/);assert.match(page,/href="\/wizard-os-home\/kit\/wizard-tokens\.css"/);
+ assert.match(src,/style-src 'self' 'unsafe-inline'/);assert.match(page,/href="\/troubleshoot\/kit\/wizard-tokens\.css"/);
 });
 test('every class the page uses is ts- prefixed, so skin and shell stylesheets cannot restyle it',()=>{
  const css=page.slice(page.indexOf('<style>'),page.indexOf('</style>'));

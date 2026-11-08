@@ -7,7 +7,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease } from './lib/checks.mjs';
-import { startRepair, loadConv, listConvs, busy, stopRepair, bridgeToken, bridgeRequest, decideApproval } from './lib/repair.mjs';
+import { startRepair, loadConv, listConvs, busy, stopRepair, bridgeToken, bridgeRequest, decideApproval, attachmentFile } from './lib/repair.mjs';
+import { planState, listPlans, approvePlan, dismissPlan, undoPlan } from './lib/repair-plan.mjs';
 import { toolDefs } from './lib/toolloop.mjs';
 import { allSignins, engineOrder, ENGINES, selectedEngine, saveEngine, appLink, META } from './lib/providers.mjs';
 
@@ -21,8 +22,20 @@ function guardianToken() {
 
 const PORT = +(process.env.PORT || 9691);
 const PREFIX = '/troubleshoot';
-const ORIGINS = new Set(String(process.env.WIZARD_PRIVATE_ORIGINS || (process.env.WIZARD_PUBLIC_NAME ? `https://${process.env.WIZARD_PUBLIC_NAME}` : '')).split(',').map(s => s.trim()).filter(Boolean));
-const PAGE = path.join(path.dirname(new URL(import.meta.url).pathname), 'web/index.html');
+// Direct line: a second loopback listener that Tailscale Serve publishes on its own HTTPS port, so the page is
+// reachable even when the HTTPS gateway (Caddy), the Wizard shell, the Agent Service and Hermes are all down.
+// TROUBLESHOOT_DIRECT_PORT is the loopback port; TROUBLESHOOT_DIRECT_URL is the origin devices use for it.
+const DIRECT_PORT = +(process.env.TROUBLESHOOT_DIRECT_PORT || 0);
+const DIRECT_URL = String(process.env.TROUBLESHOOT_DIRECT_URL || '').replace(/\/+$/, '');
+const ORIGINS = new Set([...String(process.env.WIZARD_PRIVATE_ORIGINS || (process.env.WIZARD_PUBLIC_NAME ? `https://${process.env.WIZARD_PUBLIC_NAME}` : '')).split(','), DIRECT_URL].map(s => s.trim()).filter(Boolean));
+// The shell (on the gateway origins) may frame the direct line when its own /troubleshoot/ route is down.
+const FRAMERS = [...ORIGINS].filter(o => o !== DIRECT_URL && /^https:\/\/[\w.-]+(?::\d+)?$/.test(o)).map(o => ' ' + o).join('');
+const WEB = path.join(path.dirname(new URL(import.meta.url).pathname), 'web');
+const PAGE = path.join(WEB, 'index.html');
+// The shell's shared kit (tokens, UI kit, app client), read straight from the shell's files on disk so the page
+// never waits on the shell or Agent Service process. Missing files fall back to the page's own system colours.
+const SHELL_WEB = process.env.SHELL_WEB_DIR || [path.join(process.env.HOME || '', '.local/share/wizard-ux/current/web'), path.join(process.env.HOME || '', 'apps/wizard-os-home/web')].find(d => { try { return fs.statSync(path.join(d, 'kit')).isDirectory(); } catch { return false; } }) || '';
+const KIT = { 'wizard-tokens.css': ['kit/wizard-tokens.css', 'text/css'], 'wizard-ui.css': ['kit/wizard-ui.css', 'text/css'], 'app-client.js': ['core/app-client.js', 'text/javascript'] };
 const DEV_OPEN = process.env.TROUBLESHOOT_DEV_NO_AUTH === '1'; // local tests only
 // Where the real peer address comes from. caddy: the private gateway sets X-Private-Peer from the connection.
 // tailscale-serve: Tailscale Serve proxies from loopback and overwrites X-Forwarded-For with the peer's tailnet address
@@ -32,7 +45,7 @@ const WHOIS_SOCKET = process.env.TS_WHOIS_SOCKET || CONFIG.tailscaleSocket;
 // Optional allow-list of tailnet logins (comma separated). Empty: any human (untagged) principal on the tailnet.
 const OWNERS = new Set(String(process.env.TROUBLESHOOT_OWNERS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
 function peerAddress(req) {
-  if (FRONT === 'tailscale-serve') {
+  if (FRONT === 'tailscale-serve' || (DIRECT_PORT && req.socket.localPort === DIRECT_PORT)) {
     const ra = req.socket.remoteAddress;
     if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ra)) return null;
     const xff = req.headers['x-forwarded-for'];
@@ -97,7 +110,7 @@ async function status(fresh) {
   return v;
 }
 
-const server = http.createServer(async (req, res) => {
+const handler = async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
     let p = url.pathname;
@@ -134,8 +147,13 @@ const server = http.createServer(async (req, res) => {
       if (req.headers['x-wizard-troubleshoot'] !== '1') return send(res, 403, { error: 'Missing request header.' });
     }
 
+    const km = p.match(/^\/kit\/([\w.-]+)$/);
+    if ((req.method === 'GET' || req.method === 'HEAD') && km && KIT[km[1]]) {
+      let body = ''; try { body = SHELL_WEB ? fs.readFileSync(path.join(SHELL_WEB, KIT[km[1]][0]), 'utf8') : ''; } catch {}
+      return send(res, 200, body || '/* shell kit unavailable: system colours */', { 'Content-Type': `${KIT[km[1]][1]}; charset=utf-8`, 'Cache-Control': 'no-cache' });
+    }
     if ((req.method === 'GET' || req.method === 'HEAD') && (p === '/' || p === '/index.html')) return send(res, 200, fs.readFileSync(PAGE, 'utf8'), {
-      'Content-Security-Policy': "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+      'Content-Security-Policy': `default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'${FRAMERS}`,
     });
     if ((req.method === 'GET' || req.method === 'HEAD') && p === '/api/ping') return send(res, 200, { ok: true });
     if (req.method === 'GET' && p === '/api/status') {
@@ -145,7 +163,7 @@ const server = http.createServer(async (req, res) => {
       const expired = s.checks.find(c => !c.ok && c.state === 'expired');
       const eng = expired && ENGINES.find(e => META[e].name === expired.provider || expired.id === `reply-${e}`);
       const reconnect = eng ? { engine: eng, ...META[eng], ...appLink(eng), state: 'expired' } : null;
-      return send(res, 200, { ...s, ...extra, reconnect, release: await lastAgentRelease(), repair: busy() || null, actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '' }])) });
+      return send(res, 200, { ...s, ...extra, reconnect, direct: DIRECT_URL ? `${DIRECT_URL}${PREFIX}/` : null, release: await lastAgentRelease(), repair: busy() || null, actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '' }])) });
     }
     if (req.method === 'GET' && p === '/api/incidents') return send(res, 200, { incidents: readIncidents(40) });
     if (req.method === 'POST' && p === '/api/action') {
@@ -162,9 +180,10 @@ const server = http.createServer(async (req, res) => {
     // Past sessions (read-only list, newest first). ?limit=1..50, default 10.
     if (req.method === 'GET' && p === '/api/repairs') return send(res, 200, { repairs: listConvs(url.searchParams.get('limit') || 10), running: busy() || null });
     if (req.method === 'POST' && p === '/api/repair') {
-      const b = await readBody(req);
+      const b = await readBody(req, 36 << 20); // up to four screenshots
+      if (b.images !== undefined && !Array.isArray(b.images)) return send(res, 400, { error: 'images must be a list' });
       const engine = ['auto', ...ENGINES].includes(b.engine) ? b.engine : 'auto';
-      const r = await startRepair({ convId: b.id || null, message: b.message, engine });
+      const r = await startRepair({ convId: b.id || null, message: b.message, engine, images: b.images });
       logIncident({ kind: 'repair-started', conversation: r.id, engine, by: who });
       return send(res, 202, r);
     }
@@ -175,6 +194,22 @@ const server = http.createServer(async (req, res) => {
       const r = decideApproval(b.approvalId, b.id, b.approved);
       logIncident({ kind: 'repair-approval', by: who, approvalId: b.approvalId, approved: r.approved });
       return send(res, 200, r);
+    }
+    // Owner-approved repair plans. Approval carries the digest of the exact plan the page showed.
+    if (req.method === 'GET' && p === '/api/plans') return send(res, 200, { plans: listPlans({ convId: url.searchParams.get('conv') || undefined, limit: 20 }) });
+    const pm = p.match(/^\/api\/plan\/([a-f0-9]{16})(?:\/(approve|dismiss|undo))?$/);
+    if (pm && req.method === 'GET' && !pm[2]) { const st = planState(pm[1]); return st ? send(res, 200, st) : send(res, 404, { error: 'Not found' }); }
+    if (pm && req.method === 'POST' && pm[2]) {
+      const b = await readBody(req);
+      const r = pm[2] === 'approve' ? approvePlan(pm[1], b.digest, who) : pm[2] === 'dismiss' ? dismissPlan(pm[1], who) : undoPlan(pm[1], who);
+      return send(res, pm[2] === 'approve' ? 202 : 200, r);
+    }
+    const am = p.match(/^\/api\/attachment\/([a-f0-9]{16})\/([a-f0-9]{16})$/);
+    if (req.method === 'GET' && am) {
+      const a = attachmentFile(am[1], am[2]);
+      if (!a) return send(res, 404, { error: 'Not found' });
+      res.writeHead(200, { 'Content-Type': a.type, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'" });
+      return res.end(fs.readFileSync(a.file));
     }
     const m = p.match(/^\/api\/repair\/([a-f0-9]{16})$/);
     if (req.method === 'GET' && m) {
@@ -187,6 +222,12 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     return send(res, e.status || 500, { error: e.message || 'Error' });
   }
-});
+};
+const server = http.createServer(handler);
 server.requestTimeout = 0; // actions such as a rollback can take minutes
 server.listen(PORT, process.env.HOST || '127.0.0.1', () => console.log(`Wizard Troubleshooter on 127.0.0.1:${PORT}${PREFIX}/`));
+if (DIRECT_PORT && DIRECT_PORT !== PORT) {
+  const direct = http.createServer(handler);
+  direct.requestTimeout = 0;
+  direct.listen(DIRECT_PORT, '127.0.0.1', () => console.log(`Direct line (Tailscale Serve) on 127.0.0.1:${DIRECT_PORT}${PREFIX}/ → ${DIRECT_URL || '(no public URL set)'}`));
+}
