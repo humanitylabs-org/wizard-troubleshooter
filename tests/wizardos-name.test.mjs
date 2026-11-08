@@ -13,7 +13,7 @@ const misspells = (line) => [...line.matchAll(VARIANT)].some((match) => match[0]
 
 test('the spelling rule keeps identifiers', () => {
   const two = `Wizard${' '}OS`
-  for (const bad of [two, two.toLowerCase(), `\\n${two}`, 'Wizard-OS', 'Wizard \u2014 OS', `the ${two} app`]) assert.ok(misspells(bad), bad)
+  for (const bad of [two, two.toLowerCase(), `\\n${two}`, `Wizard${'-'}OS`, `Wizard${' \u2014 '}OS`, `the ${two} app`]) assert.ok(misspells(bad), bad)
   for (const ok of ['WizardOS', 'wizard-os', 'humanitylabs-org/wizard-os', 'wizard-os-home', 'wizard_os', '~/.wizard-os', 'WIZARD_OS_HOME']) assert.ok(!misspells(ok), ok)
 })
 
