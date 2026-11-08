@@ -6,6 +6,7 @@ import net from 'node:net';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease } from './lib/checks.mjs';
 import { startRepair, loadConv, listConvs, busy, stopRepair, bridgeToken, bridgeRequest, decideApproval, attachmentFile } from './lib/repair.mjs';
 import { planState, listPlans, approvePlan, dismissPlan, undoPlan } from './lib/repair-plan.mjs';
@@ -55,6 +56,28 @@ function peerAddress(req) {
   return typeof ip === 'string' ? ip : null;
 }
 
+// Repair plans run a full shell, so approving one needs more than the loopback headers every local process could
+// forge: the connection must come from the HTTPS front itself (Caddy or tailscaled, found through ss and
+// /proc/<pid>/exe), and an owner list must be configured. Other uids' sockets show no process and are refused.
+const TRUSTED_PROXIES = new Set(String(process.env.REPAIR_TRUSTED_PROXIES || 'caddy,caddy-private-gateway,tailscaled').split(',').map(s => s.trim()).filter(Boolean));
+function frontProcess(req) {
+  const rp = req.socket.remotePort, lp = req.socket.localPort;
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress) || !rp || !lp) return null;
+  try {
+    const out = execFileSync('ss', ['-tnpH', 'state', 'established', `( sport = :${rp} and dport = :${lp} )`], { encoding: 'utf8', timeout: 3000 });
+    const pid = out.match(/pid=(\d+)/)?.[1];
+    if (!pid) return null;
+    const exe = path.basename(fs.readlinkSync(`/proc/${pid}/exe`));
+    return TRUSTED_PROXIES.has(exe) ? exe : null;
+  } catch { return null; }
+}
+function planGate(who, req) {
+  if (DEV_OPEN) return '';
+  if (!OWNERS.size) return 'Repair plans need TROUBLESHOOT_OWNERS set to the owner login on this server.';
+  if (!who || !OWNERS.has(String(who).toLowerCase())) return 'Only the owner can approve repairs.';
+  if (!frontProcess(req)) return 'Approve repairs from your Wizard address, not from this server.';
+  return '';
+}
 function validPeer(ip) {
   return net.isIP(ip) === 4 ? /^100\./.test(ip) && +ip.split('.')[1] >= 64 && +ip.split('.')[1] <= 127
     : net.isIP(ip) === 6 && ip.toLowerCase().startsWith('fd7a:115c:a1e0:');
@@ -200,6 +223,8 @@ const handler = async (req, res) => {
     const pm = p.match(/^\/api\/plan\/([a-f0-9]{16})(?:\/(approve|dismiss|undo))?$/);
     if (pm && req.method === 'GET' && !pm[2]) { const st = planState(pm[1]); return st ? send(res, 200, st) : send(res, 404, { error: 'Not found' }); }
     if (pm && req.method === 'POST' && pm[2]) {
+      const refused = pm[2] !== 'dismiss' && planGate(who, req);
+      if (refused) { logIncident({ kind: 'refused', by: who, detail: `repair plan ${pm[2]}: ${refused}` }); return send(res, 403, { error: refused }); }
       const b = await readBody(req);
       const r = pm[2] === 'approve' ? approvePlan(pm[1], b.digest, who) : pm[2] === 'dismiss' ? dismissPlan(pm[1], who) : undoPlan(pm[1], who);
       return send(res, pm[2] === 'approve' ? 202 : 200, r);

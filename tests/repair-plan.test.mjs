@@ -150,6 +150,41 @@ test('verify checks retry while a just-restarted service comes up', () => {
   assert.ok(st.run.verify[0].tries > 1);
 });
 
+test('a file that cannot be backed up stops the plan before any step; undo never deletes it', () => {
+  const locked = path.join(HOME, 'demo/locked.conf');
+  fs.writeFileSync(locked, 'keep\n'); fs.chmodSync(locked, 0o000);
+  const marker = path.join(HOME, 'demo/step-ran');
+  const rec = P.createPlan({ title: 'Locked', diagnosis: 'd', steps: [{ action: 'run', command: `touch ${marker}; cat ${locked}` }] });
+  P.approvePlan(rec.id, rec.digest, 'owner');
+  execute(dirOf(rec.id));
+  fs.chmodSync(locked, 0o644);
+  const st = P.planState(rec.id);
+  if (process.getuid?.() === 0) return; // root reads anything; nothing to prove
+  assert.equal(st.state, 'failed'); assert.match(st.run.error, /backup failed, nothing changed/);
+  assert.equal(fs.existsSync(marker), false);
+  assert.equal(fs.readFileSync(locked, 'utf8'), 'keep\n');
+});
+
+test('undo leaves files changed after the repair alone, and an interrupted run can still be undone', () => {
+  const a = path.join(HOME, 'demo/a.conf'), b = path.join(HOME, 'demo/b.conf');
+  fs.writeFileSync(a, 'a1\n'); fs.writeFileSync(b, 'b1\n');
+  const rec = P.createPlan({ title: 'Two files', diagnosis: 'd', steps: [{ action: 'write', path: a, content: 'a2\n' }, { action: 'write', path: b, content: 'b2\n' }] });
+  assert.deepEqual(P.planState(rec.id).backsUp, [a, b], 'the card shows exactly what Undo covers');
+  P.approvePlan(rec.id, rec.digest, 'owner'); execute(dirOf(rec.id));
+  fs.writeFileSync(b, 'b3 written later by someone else\n');
+  P.undoPlan(rec.id, 'owner'); execute(dirOf(rec.id), '--undo');
+  assert.equal(fs.readFileSync(a, 'utf8'), 'a1\n');
+  assert.equal(fs.readFileSync(b, 'utf8'), 'b3 written later by someone else\n');
+  assert.match(P.planState(rec.id).transcript, /left .*b\.conf as is/);
+  // Interrupted: run.json says running but its process is gone.
+  const r2 = P.createPlan({ title: 'Killed', diagnosis: 'd', steps: [{ action: 'write', path: a, content: 'x\n' }] });
+  P.approvePlan(r2.id, r2.digest, 'owner');
+  fs.writeFileSync(path.join(dirOf(r2.id), 'run.json'), JSON.stringify({ state: 'running', pid: 2 ** 22 + 12345, backups: [{ path: a, backup: path.join(dirOf(r2.id), 'nope'), existed: true }] }));
+  const st = P.planState(r2.id);
+  assert.equal(st.state, 'failed'); assert.equal(st.run.interrupted, true);
+  assert.equal(P.undoPlan(r2.id, 'owner').undoing, true);
+});
+
 test('an edit whose text is not found exactly once fails closed', () => {
   fs.writeFileSync(target, 'a\na\n');
   const rec = P.createPlan({ title: 'Ambiguous', diagnosis: 'd', steps: [{ action: 'edit', path: target, find: 'a', replace: 'b' }] });

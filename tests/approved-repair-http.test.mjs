@@ -76,6 +76,13 @@ test('plan endpoints: owner gate, request header, and approval only with the sho
   } finally { child.kill(); }
 });
 
+test('approving a plan needs an owner list and a connection from the HTTPS front, not any local process', async () => {
+  const src = fs.readFileSync(path.join(APP, 'server.mjs'), 'utf8');
+  assert.match(src, /if \(!OWNERS\.size\) return 'Repair plans need TROUBLESHOOT_OWNERS/);
+  assert.match(src, /if \(!frontProcess\(req\)\) return 'Approve repairs from your Wizard address/);
+  assert.match(src, /const refused = pm\[2\] !== 'dismiss' && planGate\(who, req\)/);
+});
+
 test('screenshots are stored with the owner message and served back only as images', async () => {
   const state = tmp();
   const { port, child } = await startServer(hermetic(state, { TROUBLESHOOT_DEV_NO_AUTH: '1' }));
