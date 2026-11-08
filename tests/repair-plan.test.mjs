@@ -18,6 +18,7 @@ fs.mkdirSync(path.join(HOME, 'runtipi/app-data/wizardapps/messenger'), { recursi
 process.env.HOME = HOME;
 process.env.TROUBLESHOOT_STATE = path.join(root, 'state');
 process.env.REPAIR_HEALTH_URLS = ''; // no health targets in the hermetic run
+process.env.REPAIR_VERIFY_WAIT_MS = '4000';
 const P = await import('../lib/repair-plan.mjs');
 
 const launched = [];
@@ -119,6 +120,7 @@ test('approved plan: backup, apply, transcript, verify; runs once; undo restores
   assert.match(P.unreportedResults(null) + P.listPlans({}).length, /./);
   // Undo
   P.undoPlan(rec.id, 'owner');
+  assert.equal(P.planState(rec.id).state, 'undoing', 'the page keeps following it until the undo unit reports');
   assert.equal(execute(dirOf(rec.id), '--undo').status, 0);
   assert.equal(P.planState(rec.id).state, 'undone');
   assert.equal(fs.readFileSync(target, 'utf8'), 'mode=broken\nother=1\n');
@@ -136,6 +138,16 @@ test('a failing step stops the plan, later steps never run, health is still chec
   assert.match(st.run.error, /step 1 exited 7/);
   assert.equal(fs.existsSync(marker), false);
   assert.match(st.transcript, /Checking health anyway/);
+});
+
+test('verify checks retry while a just-restarted service comes up', () => {
+  const flag = path.join(HOME, 'demo/up-later');
+  const rec = P.createPlan({ title: 'Slow start', diagnosis: 'd', steps: [{ action: 'run', command: `(sleep 2; touch ${flag}) >/dev/null 2>&1 &` }], verify: [`test -f ${flag}`] });
+  P.approvePlan(rec.id, rec.digest, 'owner');
+  execute(dirOf(rec.id));
+  const st = P.planState(rec.id);
+  assert.equal(st.state, 'succeeded', st.transcript);
+  assert.ok(st.run.verify[0].tries > 1);
 });
 
 test('an edit whose text is not found exactly once fails closed', () => {

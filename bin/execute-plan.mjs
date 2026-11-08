@@ -29,7 +29,7 @@ function sh(command, timeoutS) {
     const take = d => { const s = String(d); out = (out + s).slice(-20000); fs.appendFileSync(T, s.replace(/^/gm, '    ')); };
     child.stdout.on('data', take); child.stderr.on('data', take);
     const timer = setTimeout(() => { log(`  timed out after ${timeoutS} s; stopping it`); try { process.kill(-child.pid, 'SIGKILL'); } catch {} }, timeoutS * 1000);
-    child.on('close', (code, sig) => { clearTimeout(timer); resolve({ code: code ?? (sig ? 137 : 1), out }); });
+    child.on('close', (code, sig) => { clearTimeout(timer); if (out && !out.endsWith('\n')) fs.appendFileSync(T, '\n'); resolve({ code: code ?? (sig ? 137 : 1), out }); });
     child.on('error', e => { clearTimeout(timer); resolve({ code: 127, out: e.message }); });
   });
 }
@@ -128,11 +128,19 @@ async function runPlan() {
     save('run.json', run);
   }
   log(failed ? `Stopped: ${failed}. Checking health anyway.` : 'All steps done. Verifying.');
+  // A service the plan just restarted needs a moment to come up: each check retries for up to a minute.
+  const verifyUntil = Date.now() + +(process.env.REPAIR_VERIFY_WAIT_MS || 60000);
   for (const [i, c] of plan.verify.entries()) {
-    log(`verify ${i + 1}: $ ${c}`);
-    const r = await sh(c, 120);
-    run.verify.push({ check: i + 1, ok: r.code === 0, code: r.code });
-    log(`verify ${i + 1}: exit ${r.code}`);
+    let r, tries = 0;
+    for (;;) {
+      tries++;
+      log(`verify ${i + 1}${tries > 1 ? ` (try ${tries})` : ''}: $ ${c}`);
+      r = await sh(c, 120);
+      log(`verify ${i + 1}: exit ${r.code}`);
+      if (r.code === 0 || failed || Date.now() > verifyUntil) break;
+      await new Promise(res => setTimeout(res, 3000));
+    }
+    run.verify.push({ check: i + 1, ok: r.code === 0, code: r.code, tries });
   }
   run.health = await health();
   const verified = run.verify.every(v => v.ok) && run.health.every(h => h.ok);
