@@ -112,7 +112,7 @@ const server = http.createServer(async (req, res) => {
 
     // Identity: Caddy sets X-Private-Peer from the real Tailscale connection; client copies are stripped.
     let who = 'dev';
-    if (req.method === 'GET' && p === '/api/ping') return send(res, 200, { ok: true }); // reachability only; reveals nothing
+    if ((req.method === 'GET' || req.method === 'HEAD') && p === '/api/ping') return send(res, 200, { ok: true }); // reachability only; reveals nothing
     if (req.method === 'POST' && p === '/api/guardian-repair') {
       const tok = req.headers['x-guardian-token'], want = guardianToken();
       const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress) && !req.headers['x-private-peer'] && !req.headers['x-forwarded-for'] && !req.headers['tailscale-user-login'];
@@ -134,10 +134,10 @@ const server = http.createServer(async (req, res) => {
       if (req.headers['x-wizard-troubleshoot'] !== '1') return send(res, 403, { error: 'Missing request header.' });
     }
 
-    if (req.method === 'GET' && (p === '/' || p === '/index.html')) return send(res, 200, fs.readFileSync(PAGE, 'utf8'), {
+    if ((req.method === 'GET' || req.method === 'HEAD') && (p === '/' || p === '/index.html')) return send(res, 200, fs.readFileSync(PAGE, 'utf8'), {
       'Content-Security-Policy': "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
     });
-    if (req.method === 'GET' && p === '/api/ping') return send(res, 200, { ok: true });
+    if ((req.method === 'GET' || req.method === 'HEAD') && p === '/api/ping') return send(res, 200, { ok: true });
     if (req.method === 'GET' && p === '/api/status') {
       const s = await status(url.searchParams.get('fresh') === '1');
       let extra = {};
