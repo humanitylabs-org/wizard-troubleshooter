@@ -86,6 +86,19 @@ textarea:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent
 button.ts-send { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); font-size: 19px; font-weight: 700; cursor: pointer; }
 button.ts-send.ts-stop { background: var(--fill2); color: var(--text); font-size: 14px; }
 button:disabled { opacity: .5; cursor: default; }
+/* A repair plan the AI proposed: exactly what will run, one tap to approve. Fully opaque (text-bearing panel). */
+.ts-plan { background: var(--wz-panel, Canvas); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.ts-plan .ts-plan-h { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.ts-plan h3 { margin: 0; font-size: 17px; line-height: 1.3; }
+.ts-plan p { margin: 0; font-size: 14px; }
+.ts-plan ol { margin: 0; padding-left: 3ch; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.ts-plan pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; margin: 4px 0 0; padding: 8px 10px; background: var(--fill); border-radius: var(--radius-tile); font: 12.5px/1.4 var(--wz-font-mono, ui-monospace, monospace); }
+.ts-plan pre.ts-del { border-left: 3px solid var(--bad); } .ts-plan pre.ts-add { border-left: 3px solid var(--ok); }
+.ts-plan .ts-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.ts-plan .ts-acts .ts-act.ts-primary { flex: 1; justify-content: center; min-width: 180px; }
+.ts-plan .ts-state { font-size: 14px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.ts-plan details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.ts-plan .ts-safe { font-size: 12px; color: var(--muted); }
 /* Details: the one pop-up, a native dialog in the shared sheet's look. */
 dialog#sheet { color: var(--text); background: var(--wz-panel, Canvas); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 16px 0; width: min(560px, calc(100% - 24px)); max-width: none; max-height: 85%; overflow-y: auto; }
 dialog#sheet::backdrop { background: color-mix(in srgb, var(--wz-base, Canvas) 70%, transparent); }
@@ -303,7 +316,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
     try {
       const { incidents } = await api('incidents');
       const seen = new Set();
-      const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result'].includes(i.kind) && (i.text || i.detail))
+      const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result', 'repair-plan-result', 'repair-plan-undo-result'].includes(i.kind) && (i.text || i.detail))
         .filter(i => { const k = (i.text || i.detail) + when(i.at); return !seen.has(k) && seen.add(k); }).slice(0, 8);
       $('incWrap').hidden = !shown.length;
       if (shown.length) $('incidents').innerHTML = shown.map(i => `<div class="ts-row"><span class="ts-dot ${i.ok === false || i.kind === 'outage' ? 'ts-bad' : 'ts-ok'}"></span><div class="ts-m"><div class="ts-d">${esc(i.text || i.detail)}</div><div class="ts-small">${esc(when(i.at))}</div></div></div>`).join('');
@@ -358,6 +371,7 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
       return toBottom();
     }
     const d = document.createElement('div');
+    if (ev.type === 'plan') { paintPlan(ev.planId); return; }
     if (ev.type === 'text') { d.className = 'ts-msg ts-' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="ts-who">${esc(NAMES[ev.engine] || 'Claude')}${ev.modelLabel ? ' · ' + esc(ev.modelLabel) : ''}</div>${md(ev.text)}` : esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
     else if (ev.type === 'note') {
       d.className = 'ts-note'; d.textContent = ev.text;
@@ -406,6 +420,45 @@ body.ts-diagnosed #reconnect { flex: 1; overflow: auto; padding: 24px 20px; max-
       poll();
     } catch (e) { setRunning(false); $('input').value = message; paintEvent({ type: 'note', text: e.message }); }
   }
+  // Repair plans: the AI's concrete fix, shown exactly as it will run. One tap approves this exact plan (its
+  // digest goes back with the tap); then it runs on the server in its own process and this card follows it live.
+  const planTimers = new Map();
+  const STATE = { proposed: ['Waiting for your approval', ''], starting: ['Starting…', 'ts-warn'], running: ['Running…', 'ts-warn'], succeeded: ['Fixed and verified', 'ts-ok'], failed: ['Did not verify', 'ts-bad'], dismissed: ['Not run', ''], expired: ['Expired: ask again for a fresh plan', ''], undoing: ['Undoing…', 'ts-warn'], undone: ['Undone: files restored', ''] };
+  function stepHtml(s) {
+    const why = s.why ? `<div>${esc(s.why)}</div>` : '';
+    if (s.action === 'run') return `<li>${why}<pre>$ ${esc(s.command)}</pre></li>`;
+    if (s.action === 'edit') return `<li>${why}<div class="ts-small">Edit ${esc(s.path)}</div><pre class="ts-del">${esc(s.find)}</pre><pre class="ts-add">${esc(s.replace)}</pre></li>`;
+    return `<li>${why}<div class="ts-small">Replace the whole file ${esc(s.path)}</div><pre class="ts-add">${esc(s.content.length > 4000 ? s.content.slice(0, 4000) + '\n…' : s.content)}</pre></li>`;
+  }
+  async function paintPlan(id) {
+    let card = log.querySelector(`[data-plan="${id}"]`);
+    if (!card) { card = document.createElement('div'); card.className = 'ts-plan'; card.dataset.plan = id; card.innerHTML = '<div class="ts-plan-h"><span class="ts-spin"></span>Loading the repair plan…</div>'; log.insertBefore(card, log.querySelector('.ts-working')); toBottom(); }
+    let p; try { p = await api('plan/' + id); } catch (e) { card.querySelector('.ts-plan-h').textContent = 'Could not load this repair plan: ' + e.message; return; }
+    const [label, dot] = STATE[p.state] || [p.state, ''];
+    const live = ['starting', 'running', 'undoing'].includes(p.state);
+    const health = (p.undo?.health || p.run?.health || []).map(h => `<div class="ts-row"><span class="ts-dot ${h.ok ? 'ts-ok' : 'ts-bad'}"></span><div class="ts-m">${esc(h.name)}</div></div>`).join('');
+    const acts = p.state === 'proposed'
+      ? `<div class="ts-acts"><button class="ts-act ts-primary" type="button" data-plan-approve="${esc(id)}" data-digest="${esc(p.digest)}">Approve and run</button><button class="ts-act" type="button" data-plan-dismiss="${esc(id)}">Don't run</button></div><div class="ts-safe">Runs on your Wizard server with full access. Every file it changes is backed up first and can be undone.</div>`
+      : ['succeeded', 'failed'].includes(p.state) && p.run?.backups?.some(b => b.existed || b.path) ? `<div class="ts-acts"><button class="ts-act" type="button" data-plan-undo="${esc(id)}">Undo file changes</button></div>` : '';
+    const html = `<div class="ts-plan-h">Repair plan${p.engine ? ' from ' + esc(NAMES[p.engine] || p.engine) : ''}</div><h3>${esc(p.plan.title)}</h3><p>${md(p.plan.diagnosis)}</p>`
+      + `<ol>${p.plan.steps.map(stepHtml).join('')}</ol>`
+      + (p.plan.verify?.length ? `<div class="ts-small">Then checks: ${p.plan.verify.map(c => `<code>${esc(c)}</code>`).join(', ')}, plus Hermes and Wizard health.</div>` : `<div class="ts-small">Then checks Hermes and Wizard health.</div>`)
+      + `<div class="ts-state">${live ? '<span class="ts-spin"></span>' : `<span class="ts-dot ${dot}"></span>`}${esc(label)}${p.run?.error && p.state === 'failed' ? ': ' + esc(p.run.error) : ''}</div>${health}`
+      + (p.transcript ? `<details${live ? ' open' : ''}><summary>What it did</summary><pre>${esc(p.transcript)}</pre></details>` : '') + acts;
+    if (card.dataset.html !== html) { card.dataset.html = html; card.innerHTML = html; const pre = card.querySelector('details pre'); if (pre) pre.scrollTop = pre.scrollHeight; }
+    clearTimeout(planTimers.get(id));
+    if (live) planTimers.set(id, setTimeout(() => paintPlan(id), 1500));
+  }
+  log.addEventListener('click', async e => {
+    const a = e.target.closest('[data-plan-approve],[data-plan-dismiss],[data-plan-undo]'); if (!a) return;
+    const id = a.dataset.planApprove || a.dataset.planDismiss || a.dataset.planUndo;
+    const what = a.dataset.planApprove ? 'approve' : a.dataset.planDismiss ? 'dismiss' : 'undo';
+    a.closest('.ts-acts').querySelectorAll('button').forEach(b => b.disabled = true);
+    a.textContent = what === 'approve' ? 'Starting…' : what === 'undo' ? 'Undoing…' : 'OK';
+    try { await api(`plan/${id}/${what}`, { method: 'POST', headers: H, body: JSON.stringify(what === 'approve' ? { digest: a.dataset.digest } : {}) }); }
+    catch (err) { paintEvent({ type: 'note', text: err.message }); }
+    paintPlan(id);
+  });
   document.addEventListener('click', e => {
     const approval = e.target.closest('[data-approval]');
     if (approval) {

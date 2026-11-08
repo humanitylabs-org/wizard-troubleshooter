@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease } from './lib/checks.mjs';
 import { startRepair, loadConv, listConvs, busy, stopRepair, bridgeToken, bridgeRequest, decideApproval } from './lib/repair.mjs';
 import { toolDefs } from './lib/toolloop.mjs';
+import { plansOn, planState, listPlans, approvePlan, dismissPlan, undoPlan } from './lib/repair-plan.mjs';
 import { allSignins, engineOrder, ENGINES, selectedEngine, saveEngine, appLink, META } from './lib/providers.mjs';
 
 function guardianToken() {
@@ -175,6 +176,16 @@ const server = http.createServer(async (req, res) => {
       const r = decideApproval(b.approvalId, b.id, b.approved);
       logIncident({ kind: 'repair-approval', by: who, approvalId: b.approvalId, approved: r.approved });
       return send(res, 200, r);
+    }
+    // Owner-approved repair plans (off unless the repair policy says "plans": true). Approval carries the digest of
+    // the exact plan the page showed. Reading and undoing stay available when switched off, so a past run can be undone.
+    if (req.method === 'GET' && p === '/api/plans') return send(res, 200, { on: plansOn(), plans: listPlans({ convId: url.searchParams.get('conv') || undefined, limit: 20 }) });
+    const pm = p.match(/^\/api\/plan\/([a-f0-9]{16})(?:\/(approve|dismiss|undo))?$/);
+    if (pm && req.method === 'GET' && !pm[2]) { const st = planState(pm[1]); return st ? send(res, 200, st) : send(res, 404, { error: 'Not found' }); }
+    if (pm && req.method === 'POST' && pm[2]) {
+      const b = await readBody(req);
+      const r = pm[2] === 'approve' ? approvePlan(pm[1], b.digest, who) : pm[2] === 'dismiss' ? dismissPlan(pm[1], who) : undoPlan(pm[1], who);
+      return send(res, pm[2] === 'approve' ? 202 : 200, r);
     }
     const m = p.match(/^\/api\/repair\/([a-f0-9]{16})$/);
     if (req.method === 'GET' && m) {
