@@ -202,7 +202,7 @@ const handler = async (req, res) => {
       const expired = s.checks.find(c => !c.ok && c.state === 'expired');
       const eng = expired && ENGINES.find(e => META[e].name === expired.provider || expired.id === `reply-${e}`);
       const reconnect = eng ? { engine: eng, ...META[eng], ...appLink(eng), state: 'expired' } : null;
-      return send(res, 200, { ...s, ...extra, reconnect, direct: DIRECT_URL ? `${DIRECT_URL}${PREFIX}/` : null, release: await lastAgentRelease(), repair: busy() || null, actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '' }])) });
+      return send(res, 200, { ...s, ...extra, reconnect, direct: DIRECT_URL ? `${DIRECT_URL}${PREFIX}/` : null, release: await lastAgentRelease(), repair: busy() || null, actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '', ...(a.onlyWhenNeeded ? { onlyWhenNeeded: true } : {}) }])) });
     }
     if (req.method === 'GET' && p === '/api/incidents') return send(res, 200, { incidents: readIncidents(40) });
     if (req.method === 'POST' && p === '/api/action') {
