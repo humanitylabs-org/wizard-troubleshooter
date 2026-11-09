@@ -92,8 +92,10 @@ POSTs need the private origin plus `X-Wizard-Troubleshoot: 1`. The guardian uses
   `app-addresses-repair` incident. It restarts nothing, so the guardian applies it even when report-only
   (`GUARDIAN_HEAL_ADDRESSES=0` keeps report-only strict; `APP_ADDRESSES=0` turns the check off).
 
-The guardian is report-only with `GUARDIAN_ACT=0`: it logs what it would fix and never restarts, rolls back or starts a
-repair (app-address repairs excepted, see above).
+The guardian acts unless `GUARDIAN_ACT=0`. With `GUARDIAN_ACT=0` it is report-only: it logs what it would fix and never
+restarts, rolls back or starts a repair (app-address repairs excepted, see above). On a box set up by the installer the
+owner turns that on with `wam troubleshooter --report-only` (kept across updates) and off again with
+`wam troubleshooter --act`.
 
 Install (Tailscale Serve box, e.g. a Runtipi/WAM Wizard): copy the units as below, then use
 `deploy/tailscale-serve/troubleshooter.conf` as the drop-in for both services (fill in the names), add
@@ -107,8 +109,9 @@ private site block, validate Caddy, reload. Units: `wizard-troubleshooter.servic
 `wizard-guardian.service` + `.timer`.
 Every new WizardOS box gets this native install from the installer (wizard-app-manager `wam troubleshooter`), pinned to
 the commit its release names: units, a generated drop-in with this box's layout (owner login from the box's own
-Tailscale sign-in, shell/Agent Service ports and containers from App Manager), guardian report-only, and `/troubleshoot`
-on every shell HTTPS port. Where Hermes's CLI exists (`HERMES_BIN`, default `$HERMES_HOME/hermes-agent/.hermes/bin/hermes`,
+Tailscale sign-in, shell/Agent Service ports and containers from App Manager), the guardian repairing on its own
+(`GUARDIAN_ACT=1`; boxes an older App Manager set up report-only switch to repairing on their next update unless the
+owner chose report-only with `wam troubleshooter --report-only`), and `/troubleshoot` on every shell HTTPS port. Where Hermes's CLI exists (`HERMES_BIN`, default `$HERMES_HOME/hermes-agent/.hermes/bin/hermes`,
 `HERMES_HOME` default `~/.hermes`), **Restart your agent (Hermes)** is the gateway's own drain restart (`hermes gateway restart
 --interrupt`, in its own transient unit outside the gateway), not `systemctl restart`, which fenced boxes refuse
 (`RefuseManualStop=yes`). A drain takes minutes; while it runs (Hermes's `gateway_state.json` says draining, the journal says
