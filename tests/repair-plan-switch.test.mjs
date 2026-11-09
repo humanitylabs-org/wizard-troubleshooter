@@ -1,6 +1,8 @@
-// Repair plans are switched off by default (#37). The switch is the existing per-box repair policy
-// (REPAIR_POLICY_FILE): without "plans": true the model gets no plan tools, nothing can be approved, the executor
-// refuses, and the HTTP approve route says so. Hermetic: throwaway HOME, state and policy.
+// Repair plans are ON by default (9 Nov 2026, James: the Troubleshooter must be able to fix a lockout on a fresh box,
+// under owner approval). The switch is the per-box repair policy (REPAIR_POLICY_FILE, default
+// ~/.config/wizard-troubleshooter/repair-policy.json): no file or no "plans" key = on; "plans": false (or anything
+// but true) and an unreadable policy = off, and then the model gets no plan tools, nothing can be approved, the
+// executor refuses, and the HTTP approve route says so. Hermetic: throwaway HOME, state and policy.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -26,8 +28,23 @@ const names = () => toolDefs().map(t => t.name);
 const PLAN_TOOLS = ['inspect_file', 'list_dir', 'search_text', 'propose_repair'];
 const plan = { title: 'Demo', diagnosis: 'd', steps: [{ action: 'run', command: 'true' }] };
 
-test('off by default: no policy, a policy without plans, or plans other than true', async () => {
-  for (const v of [null, { files: [], commands: {} }, { files: [], commands: {}, plans: 'yes' }, { files: [], commands: {}, plans: 1 }]) {
+test('on by default: no policy file at all (fresh install), at the default path, or a policy without "plans"', async () => {
+  const dflt = path.join(HOME, '.config/wizard-troubleshooter/repair-policy.json');
+  for (const v of [null, { files: [], commands: {} }]) {
+    policy(v);
+    assert.equal(P.plansOn(), true, JSON.stringify(v));
+    assert.ok(PLAN_TOOLS.every(n => names().includes(n)), 'the plan tools reach the model');
+  }
+  policy(null);
+  fs.mkdirSync(path.dirname(dflt), { recursive: true });
+  fs.writeFileSync(dflt, JSON.stringify({ files: [], commands: {}, plans: false }));
+  assert.equal(P.plansOn(), false, 'the default policy path is read when REPAIR_POLICY_FILE is unset');
+  fs.rmSync(dflt);
+  assert.equal(P.plansOn(), true);
+});
+
+test('off when the owner says so: plans other than true, or an unreadable policy', async () => {
+  for (const v of [{ files: [], commands: {}, plans: false }, { files: [], commands: {}, plans: 'yes' }, { files: [], commands: {}, plans: 1 }]) {
     policy(v);
     assert.equal(P.plansOn(), false, JSON.stringify(v));
     assert.ok(PLAN_TOOLS.every(n => !names().includes(n)), 'no plan tool reaches any model');
@@ -46,7 +63,7 @@ test('switched on: the model gets the plan tools; switched off again: a proposed
   const out = JSON.parse(await callTool('propose_repair', JSON.stringify(plan), { engine: 'claude', convId: 'c'.repeat(16) }));
   assert.equal(out.proposed, true);
   const rec = P.planState(out.plan);
-  policy({ files: [], commands: {} });
+  policy({ files: [], commands: {}, plans: false });
   assert.throws(() => P.approvePlan(rec.id, rec.digest, 'owner'), e => e.status === 403 && /switched off/.test(e.message));
   assert.equal(launched.length, 0);
   assert.equal(P.planState(rec.id).state, 'proposed');
@@ -105,7 +122,7 @@ test('HTTP: owner gate and page header; approve refused while off and with a wro
     assert.equal((await (await fetch(u('plans'))).json()).on, true);
     assert.equal((await fetch(u(`plan/${rec.id}/approve`), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ digest: rec.digest }) })).status, 403, 'needs the page header');
     { const w = await fetch(u(`plan/${rec.id}/approve`), { method: 'POST', headers: H, body: JSON.stringify({ digest: '0'.repeat(64) }) }); assert.equal(w.status, 409, await w.text()); }
-    fs.writeFileSync(pol, JSON.stringify({ files: [], commands: {} })); // switched off live, no restart
+    fs.writeFileSync(pol, JSON.stringify({ files: [], commands: {}, plans: false })); // switched off live, no restart
     assert.equal((await (await fetch(u('plans'))).json()).on, false);
     const off = await fetch(u(`plan/${rec.id}/approve`), { method: 'POST', headers: H, body: JSON.stringify({ digest: rec.digest }) });
     assert.equal(off.status, 403); assert.match((await off.json()).error, /switched off/);
