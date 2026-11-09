@@ -212,8 +212,10 @@ async function main() {
     await sleep(8000);
     const again = (await runChecks()).checks.find(x => x.id === c.id);
     const fixed = r.ok && again?.ok;
-    actionsTaken.push({ label: c.label, action, fixed, detail: c.detail, result: r.detail });
-    logIncident({ kind: 'auto-fix-result', action, ok: fixed, text: fixed ? `${c.label} is working again.` : `${c.label} is still not working after ${action.startsWith('rollback') ? 'undoing the update' : 'a restart'}.` });
+    // A drain restart (Hermes) lands minutes later: it is in progress, not a restart that didn't help.
+    const pending = r.ok && r.pending && !fixed;
+    actionsTaken.push({ label: c.label, action, fixed, pending, detail: c.detail, result: r.detail });
+    logIncident({ kind: 'auto-fix-result', action, ok: fixed, ...(pending ? { pending: true } : {}), text: fixed ? `${c.label} is working again.` : pending ? `${c.label} is restarting: it finishes the replies in progress first, then comes back by itself.` : `${c.label} is still not working after ${action.startsWith('rollback') ? 'undoing the update' : 'a restart'}.` });
     if (fixed) s.fails[c.id] = 0;
   }
 
@@ -270,7 +272,7 @@ async function main() {
   if (actionsTaken.length) {
     const lines = actionsTaken.map(a => a.action === 'ai-repair'
       ? `- ${a.label}: restarts didn't fix it, so I've asked your Claude/ChatGPT subscription to repair it. Follow along: /troubleshoot/#r=${a.conversation}`
-      : `- ${a.label} stopped working (${bare(a.detail)}). I ${a.action.startsWith('rollback') ? 'undid the last update' : a.action === 'restart:app-addresses' ? 'repaired it' : 'restarted it'}: ${a.fixed ? 'it works again.' : 'still not working, trying further steps.'}`);
+      : `- ${a.label} stopped working (${bare(a.detail)}). I ${a.action.startsWith('rollback') ? 'undid the last update' : a.action === 'restart:app-addresses' ? 'repaired it' : 'restarted it'}: ${a.fixed ? 'it works again.' : a.pending ? 'it is finishing the replies in progress first, then comes back by itself.' : 'still not working, trying further steps.'}`);
     if (s.outage) s.outage.reported = true;
     await postThread(`guardian-${now}`, `**Wizard fixed itself** at ${bkk(now)} (${ZONE_NAME}).\n\n${lines.join('\n')}\n\nAnything still wrong? Open the Troubleshooter: /troubleshoot/`);
   }
