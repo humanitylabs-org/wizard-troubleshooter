@@ -36,6 +36,22 @@ export function stallSteps(s, check, now, repairFree) {
   return steps;
 }
 
+// The Troubleshooter page is the owner's way back, so the guardian watches it too: a page process that is
+// running but no longer answering (Restart=always only covers one that exits) is restarted after two missed
+// minutes, report-only mode included (it holds no owner work; a page that does not answer helps nobody).
+const SELF_MISSES = 2;
+export function selfWatchStep(s, answering) {
+  if (answering) { s.selfMiss = 0; return null; }
+  s.selfMiss = (s.selfMiss || 0) + 1;
+  return s.selfMiss >= SELF_MISSES && s.selfMiss % SELF_MISSES === 0 ? 'restart' : null;
+}
+function pingSelf() {
+  return new Promise(resolve => {
+    const req = http.get({ host: '127.0.0.1', port: +(process.env.TROUBLESHOOT_PORT || 9691), path: '/troubleshoot/api/ping', timeout: 8000 }, res => { res.resume(); resolve(res.statusCode === 200); });
+    req.on('timeout', () => req.destroy(new Error('timeout'))); req.on('error', () => resolve(false));
+  });
+}
+
 // Restart-loop guard (7 Nov 2026: four Agent Service restarts in an hour while Hermes was the slow part; each one
 // cut off work in flight). If the last restart of this piece did not keep it working for 30 min, hold restarts of it
 // for the next hour. `fresh` is true only on the run that starts the hold, so the escalation happens once.
@@ -143,6 +159,15 @@ async function main() {
   const s = load();
   const now = Date.now();
   if (await deployInProgress()) { console.log('Agent Service update in progress; checking again next minute.'); return; }
+  // Hermetic runs (tests, rehearsals) use their own state folder and never touch the real page's unit unless named.
+  const selfUnit = process.env.TROUBLESHOOT_UNIT ?? (process.env.TROUBLESHOOT_STATE ? '' : 'wizard-troubleshooter.service');
+  if (selfUnit && selfWatchStep(s, await pingSelf()) === 'restart') {
+    if (process.argv.includes('--dry-run')) console.log(`[dry-run] would restart ${selfUnit}: the Troubleshooter page is not answering`);
+    else {
+      const r = await run('systemctl', ['--user', 'restart', selfUnit], { timeout: 60000 });
+      logIncident({ kind: 'auto-fix-result', action: 'restart:troubleshooter', ok: r.ok, text: r.ok ? 'The Troubleshooter page stopped answering, so Wizard restarted it.' : `The Troubleshooter page stopped answering and could not be restarted: ${(r.err || r.out).slice(-200)}` });
+    }
+  }
   const status = await runChecks();
   const byId = Object.fromEntries(CHECKS.map(c => [c.id, c]));
   const failing = status.checks.filter(c => !c.ok && !c.skipped);
@@ -178,9 +203,11 @@ async function main() {
       : stalled ? `Replies aren't starting: ${bare(stalled.detail)}` : `Problem found: ${core.map(c => `${c.label} (${bare(c.detail)})`).join('; ')}` });
   }
 
+  const crashing = [];
   for (const c of failing) {
     const def = byId[c.id];
     if (c.busy) continue; // alive and waiting on Hermes: a restart cannot help and would cut off messages being sent
+    if (c.crashLoop) { crashing.push(c); continue; } // systemd keeps restarting it already: another restart cannot fix it
     if (def.noAutoFix || c.id === 'agent-reply' || c.state === 'expired' || s.fails[c.id] < (def.threshold || 2)) continue;
     const recent = (s.fixes[c.id] || []).filter(t => now - t < HOUR);
     s.fixes[c.id] = recent;
@@ -219,6 +246,20 @@ async function main() {
     if (fixed) s.fails[c.id] = 0;
   }
 
+  // A crash loop needs its cause found, not another restart: the repair chat, once per AI_REPAIR_GAP.
+  if (crashing.length) {
+    const text = crashing.map(c => `- ${c.label}: ${c.detail}`).join('\n');
+    if (DRY) console.log(`[dry-run] crash loop, would start a repair chat:\n${text}`);
+    else if (now - (s.lastAiRepair || 0) > AI_REPAIR_GAP) {
+      const r = await startAiRepair(`Automatic check: these keep crashing; systemd restarts them and they crash again:\n${text}\nRead the unit's journal for the error, find the cause, fix it (propose_repair for a code or config change), verify with check_status, and explain in plain words.`);
+      if (r?.id) {
+        s.lastAiRepair = now;
+        logIncident({ kind: 'repair-started', conversation: r.id, text: `${crashing.map(c => c.label).join(', ')} keeps crashing. Wizard asked your AI subscription to find the cause.` });
+        actionsTaken.push({ label: crashing.map(c => c.label).join(', '), action: 'ai-repair', fixed: false, conversation: r.id });
+      }
+    }
+  }
+
   // A dead login cannot be restarted away. Start the independent repair chat after two real failures.
   const replyDown = core.find(c => c.id === 'agent-reply');
   if (replyDown && s.outage && !s.outage.reported) {
@@ -240,7 +281,9 @@ async function main() {
       if (r?.id) { s.lastAiRepair = now; s.stall.repair = r.id; logIncident({ kind: 'repair-started', conversation: r.id, text: `Replies aren't starting. Wizard asked your AI subscription to find out why.` }); }
     } else if (step === 'ask-owner') {
       const mins = Math.max(1, Math.round((now - s.stall.since) / 60e3));
-      const text = `Replies haven't started for ${mins} min, though your agent says it is fine. Open the Troubleshooter and tap Restart your agent (Hermes) to confirm: /troubleshoot/`;
+      const draining = status.checks.find(c => c.id === 'hermes')?.restarting;
+      const text = draining ? `Replies haven't started for ${mins} min because your agent is waiting for other work to finish before it restarts. Open the Troubleshooter and tap Restart your agent now: /troubleshoot/`
+        : `Replies haven't started for ${mins} min, though your agent says it is fine. Open the Troubleshooter and tap Restart your agent (Hermes) to confirm: /troubleshoot/`;
       logIncident({ kind: 'outage', text });
       if (await postThread(`guardian-stall-${s.stall.since}`, `**${text}**`) && s.outage) s.outage.reported = true; // the recovery note follows
     }

@@ -317,7 +317,7 @@ try { if (window.parent !== window) window.parent.postMessage({ type: 'wizard-tr
     $('checks').innerHTML = s.checks.map(c => `<div class="ts-row"><span class="ts-dot ${c.skipped ? '' : c.ok ? (c.slow ? 'ts-warn' : 'ts-ok') : 'ts-bad'}"></span><div class="ts-m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="ts-d">${esc(c.detail)}</div>`}</div></div>`).join('');
     // A failing check that names its fix puts that fix first, marked, even while the link itself looks healthy.
     const wanted = new Set(bad.map(c => c.fix).filter(Boolean));
-    $('fixes').innerHTML = Object.entries(actions).sort(([a], [b]) => wanted.has(b) - wanted.has(a)).map(([k, a]) => `<button class="ts-act${wanted.has(k) ? ' ts-wanted' : ''}" type="button" data-act="${esc(k)}">${esc(wanted.has(k) ? `${a.label} (recommended)` : a.label)}</button>`).join('');
+    $('fixes').innerHTML = Object.entries(actions).filter(([k, a]) => !a.onlyWhenNeeded || wanted.has(k)).sort(([a], [b]) => wanted.has(b) - wanted.has(a)).map(([k, a]) => `<button class="ts-act${wanted.has(k) ? ' ts-wanted' : ''}" type="button" data-act="${esc(k)}">${esc(wanted.has(k) ? `${a.label} (recommended)` : a.label)}</button>`).join('');
     if (s.accounts) {
       setEngines(s.accounts, s.engine);
       $('acct').innerHTML = s.accounts.map(a => `<div class="ts-row"><span class="ts-dot ${a.ok ? 'ts-ok' : 'ts-bad'}"></span><div class="ts-m">${esc(a.app)}<div class="ts-d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok || !a.open ? '' : appLink(a, a.installed === false ? 'Get app' : 'Sign in', '')}</div>`).join('');
