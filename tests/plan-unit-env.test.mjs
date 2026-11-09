@@ -54,9 +54,14 @@ test('an approved plan launched through systemd-run sees the repair policy and r
   assert.ok(!args.some(a => /REPAIR_BRIDGE_TOKEN|tk-never|PARENT_ONLY/.test(a)), 'tokens and unrelated settings never go into the unit');
 });
 
-test('an executor started without the policy says so instead of a bare "switched off"', () => {
+test('an executor started without REPAIR_POLICY_FILE reads the box default policy, so it agrees with the page', () => {
   const dir = fs.readdirSync(path.join(STATE, 'repair-plans'))[0];
-  const p = spawnSync(process.execPath, ['bin/execute-plan.mjs', path.join(STATE, 'repair-plans', dir)], { cwd: APP, env: { PATH: process.env.PATH, HOME, TROUBLESHOOT_STATE: STATE }, encoding: 'utf8' });
-  assert.equal(p.status, 3);
-  assert.match(fs.readFileSync(path.join(STATE, 'repair-plans', dir, 'transcript.log'), 'utf8'), /no repair policy reached this run \(REPAIR_POLICY_FILE is not set here\)/);
+  const dflt = path.join(HOME, '.config/wizard-troubleshooter/repair-policy.json');
+  fs.mkdirSync(path.dirname(dflt), { recursive: true });
+  fs.writeFileSync(dflt, JSON.stringify({ files: [], commands: {}, plans: false }));
+  try {
+    const p = spawnSync(process.execPath, ['bin/execute-plan.mjs', path.join(STATE, 'repair-plans', dir)], { cwd: APP, env: { PATH: process.env.PATH, HOME, TROUBLESHOOT_STATE: STATE }, encoding: 'utf8' });
+    assert.equal(p.status, 3);
+    assert.match(fs.readFileSync(path.join(STATE, 'repair-plans', dir, 'transcript.log'), 'utf8'), /REFUSED: repair plans are switched off in this box's repair policy/);
+  } finally { fs.rmSync(dflt); }
 });

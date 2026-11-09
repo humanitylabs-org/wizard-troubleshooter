@@ -9,7 +9,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import http from 'node:http';
-import { CONFIG, CHECKS, runChecks, doAction, deployInProgress, lastAgentRelease, logIncident, run } from '../lib/checks.mjs';
+import { CONFIG, CHECKS, runChecks, doAction, deployInProgress, lastAgentRelease, logIncident, run, hermesRestartState } from '../lib/checks.mjs';
 
 const STATE = path.join(CONFIG.stateDir, 'guardian.json');
 const TOKEN = path.join(CONFIG.stateDir, 'guardian.token');
@@ -50,6 +50,17 @@ function pingSelf() {
     const req = http.get({ host: '127.0.0.1', port: +(process.env.TROUBLESHOOT_PORT || 9691), path: '/troubleshoot/api/ping', timeout: 8000 }, res => { res.resume(); resolve(res.statusCode === 200); });
     req.on('timeout', () => req.destroy(new Error('timeout'))); req.on('error', () => resolve(false));
   });
+}
+
+// A drain somebody else started (an update, a reload) that holds the owner's messages back (replies not starting)
+// for GUARDIAN_DRAIN_FORCE_MIN: the guardian stops the wait, as the owner's "Restart your agent now" would. Scheduled
+// tasks and other background work never lock the owner out for longer than that (9 Nov 2026: 10 min of refused
+// messages behind a 30 min drain cap). An owner-asked restart bounds itself sooner (HERMES_FORCE_AFTER_S).
+export const DRAIN_FORCE_MS = +(process.env.GUARDIAN_DRAIN_FORCE_MIN || 10) * 60e3;
+export function drainForceDue(rs, stall, now) {
+  if (!rs || !['draining', 'requested'].includes(rs.state) || rs.forcedAt || rs.ours) return false;
+  if (!stall || stall.ok) return false;
+  return !!rs.drainSince && now - rs.drainSince >= DRAIN_FORCE_MS;
 }
 
 // Restart-loop guard (7 Nov 2026: four Agent Service restarts in an hour while Hermes was the slow part; each one
@@ -273,6 +284,19 @@ async function main() {
 
   // Replies not starting while Hermes looks healthy: the repair chat first, the owner only for the restart itself.
   const stall = status.checks.find(c => c.id === 'replies-start');
+  const hermesCheck = status.checks.find(c => c.id === 'hermes');
+  if (hermesCheck?.restarting && stall && !stall.ok) {
+    const rs = await hermesRestartState();
+    if (drainForceDue(rs, stall, now)) {
+      const mins = Math.round((now - rs.drainSince) / 60e3);
+      if (DRY) console.log(`[dry-run] a restart has held messages back for ${mins} min: would force-restart:hermes`);
+      else {
+        const r = await doAction('force-restart:hermes');
+        logIncident({ kind: 'auto-fix-result', action: 'force-restart:hermes', ok: r.ok, pending: r.pending, text: `Your agent had been waiting ${mins} min for other work to finish before restarting, holding your messages back, so Wizard stopped the wait. That work resumes after the restart.` });
+        actionsTaken.push({ label: 'Your agent (Hermes)', action: 'force-restart:hermes', fixed: r.ok && !r.pending, pending: r.pending, detail: `it had been waiting ${mins} min to restart` });
+      }
+    }
+  }
   for (const { step } of stallSteps(s, stall && !stall.ok ? stall : null, now, now - (s.lastAiRepair || 0) > AI_REPAIR_GAP)) {
     if (step === 'ended') continue; // the outage bookkeeping below logs the recovery
     if (DRY) { console.log(`[dry-run] replies not starting: would ${step}`); continue; }
@@ -315,7 +339,7 @@ async function main() {
   if (actionsTaken.length) {
     const lines = actionsTaken.map(a => a.action === 'ai-repair'
       ? `- ${a.label}: restarts didn't fix it, so I've asked your Claude/ChatGPT subscription to repair it. Follow along: /troubleshoot/#r=${a.conversation}`
-      : `- ${a.label} stopped working (${bare(a.detail)}). I ${a.action.startsWith('rollback') ? 'undid the last update' : a.action === 'restart:app-addresses' ? 'repaired it' : 'restarted it'}: ${a.fixed ? 'it works again.' : a.pending ? 'it is finishing the replies in progress first, then comes back by itself.' : 'still not working, trying further steps.'}`);
+      : `- ${a.label} stopped working (${bare(a.detail)}). I ${a.action.startsWith('rollback') ? 'undid the last update' : a.action === 'restart:app-addresses' ? 'repaired it' : a.action === 'force-restart:hermes' ? 'stopped the wait and restarted it' : 'restarted it'}: ${a.fixed ? 'it works again.' : a.pending ? 'it is finishing the replies in progress first, then comes back by itself.' : 'still not working, trying further steps.'}`);
     if (s.outage) s.outage.reported = true;
     await postThread(`guardian-${now}`, `**Wizard fixed itself** at ${bkk(now)} (${ZONE_NAME}).\n\n${lines.join('\n')}\n\nAnything still wrong? Open the Troubleshooter: /troubleshoot/`);
   }

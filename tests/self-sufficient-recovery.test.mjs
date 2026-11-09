@@ -221,3 +221,18 @@ test('the owner is never sent to Telegram, a console or another tool', () => {
     for (const l of code) { assert.doesNotMatch(l, /telegram|\bssh\b|server console/i, `${f}: ${l.trim()}`); assert.doesNotMatch(l, /(?:^|[\s'"`(])\/restart\b/, `${f}: ${l.trim()}`); }
   }
 });
+
+test('the guardian stops a drain someone else started once it has held messages back for the bound', async () => {
+  process.env.TROUBLESHOOT_STATE ||= fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'self-watch-'));
+  const { drainForceDue, DRAIN_FORCE_MS } = await import('../bin/guardian.mjs');
+  const now = Date.now(), stall = { ok: false };
+  const rs = { state: 'draining', drainSince: now - DRAIN_FORCE_MS - 1000, ours: false, forcedAt: null };
+  assert.equal(DRAIN_FORCE_MS, 10 * 60e3);
+  assert.equal(drainForceDue(rs, stall, now), true);
+  assert.equal(drainForceDue({ ...rs, drainSince: now - 60e3 }, stall, now), false, 'not before the bound');
+  assert.equal(drainForceDue(rs, { ok: true }, now), false, 'not while messages still start');
+  assert.equal(drainForceDue(rs, null, now), false);
+  assert.equal(drainForceDue({ ...rs, forcedAt: new Date().toISOString() }, stall, now), false, 'not twice');
+  assert.equal(drainForceDue({ ...rs, ours: true }, stall, now), false, 'an owner-asked restart bounds itself');
+  assert.equal(drainForceDue({ ...rs, state: 'idle' }, stall, now), false);
+});
