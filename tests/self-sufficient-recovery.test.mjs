@@ -43,7 +43,7 @@ if [[ "$2" == kill && "$*" == *--kill-whom=main* ]]; then
   [[ "$*" == *SIGKILL* && -f ${F}/kill-lands ]] && echo 3333 > ${F}/mainpid
   exit 0
 fi
-if [[ "$2" == show && "$3" == fake-hermes.service ]]; then echo "MainPID=$(cat ${F}/mainpid)"; echo "ExecMainStartTimestamp=Sun 2026-11-08 14:18:10 UTC"; exit 0; fi
+if [[ "$2" == show && "$3" == fake-hermes.service ]]; then echo "MainPID=$(cat ${F}/mainpid)"; echo "ExecMainStartTimestamp=$(cat ${F}/since 2>/dev/null || echo 'Sun 2026-11-08 14:18:10 UTC')"; exit 0; fi
 if [[ "$2" == show ]]; then echo "ActiveState=active"; exit 0; fi
 exit 0
 `);
@@ -53,7 +53,6 @@ exit 0
   w(path.join(BIN, 'journalctl'), `#!/bin/bash
 pid=$(cat ${F}/mainpid)
 if [[ "$*" == *runtime_draining* ]]; then [[ -f ${F}/journal-draining && "$*" == *"_PID=$pid"* ]] && echo "WARNING gateway.session_authority: Session x paused: runtime_draining"; exit 0; fi
-if [[ "$*" == *"Restart deferred"* ]]; then [[ "$*" == *"_PID=$pid"* ]] && cat ${F}/drain-log 2>/dev/null; exit 0; fi
 if [[ "$*" == *"Scheduled restart job"* ]]; then for u in $(cat ${F}/crashing 2>/dev/null); do [[ "$*" == *"-u $u"* ]] && for i in 1 2 3 4 5; do echo "$u: Scheduled restart job, restart counter is at $i."; done; done; exit 0; fi
 if [[ "$*" == *"(?i)error"* ]]; then for u in $(cat ${F}/crashing 2>/dev/null); do [[ "$*" == *"-u $u"* ]] && echo "ModuleNotFoundError: No module named 'snowballstemmer'"; done; exit 0; fi
 exit 0
@@ -143,10 +142,15 @@ test('someone else\'s long drain: how long and on what, and "Restart your agent 
     // An update's reload started a drain 5 min ago, waiting on 19 units (mostly scheduled tasks), 1500 s left.
     fs.writeFileSync(path.join(r.F, 'journal-draining'), '');
     const t = Math.floor(Date.now() / 1000);
-    fs.writeFileSync(path.join(r.F, 'drain-log'), [
-      `${t - 300}.1 h python[1111]: 2026-11-09 08:54:33,132 INFO gateway.run: SIGUSR1 received (systemctl reload / hermes gateway restart): performing a graceful gateway restart`,
-      `${t - 300}.2 h python[1111]: 2026-11-09 08:54:33,147 INFO gateway.run: Restart requested with 19 active work unit(s); deferring stop() until they finish (cap=1800s)`,
-      `${t - 10}.0 h python[1111]: INFO gateway.run: Restart deferred: waiting on 19 active work unit(s) (0 wedged and excluded, 0 restart-safe and excluded; 1510s remaining before force drain): [{'kind': 'cron', 'job_id': 'a'}, {'kind': 'cron', 'job_id': 'b'}, {'kind': 'managed', 'pid': 7}]`,
+    // Hermes's log format: server local time, "YYYY-MM-DD HH:MM:SS,mmm".
+    const stamp = sec => { const d = new Date(sec * 1000), z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())},000`; };
+    fs.writeFileSync(path.join(r.F, 'since'), new Date((t - 1800) * 1000).toUTCString());
+    fs.mkdirSync(path.join(r.HH, 'logs'), { recursive: true });
+    fs.writeFileSync(path.join(r.HH, 'logs/gateway.log'), [
+      `${stamp(t - 3600)} INFO gateway.run: SIGUSR1 received (an earlier drain, before this process started)`,
+      `${stamp(t - 300)} INFO gateway.run: SIGUSR1 received (systemctl reload / hermes gateway restart): performing a graceful gateway restart`,
+      `${stamp(t - 300)} INFO gateway.run: Restart requested with 19 active work unit(s); deferring stop() until they finish (cap=1800s)`,
+      `${stamp(t - 10)} INFO gateway.run: Restart deferred: waiting on 19 active work unit(s) (0 wedged and excluded, 0 restart-safe and excluded; 1510s remaining before force drain): [{'kind': 'cron', 'job_id': 'a'}, {'kind': 'cron', 'job_id': 'b'}, {'kind': 'managed', 'pid': 7}]`,
     ].join('\n') + '\n');
     const s = await node(`import { runChecks, ACTIONS } from './lib/checks.mjs'; const s = await runChecks(); console.log(JSON.stringify({ checks: s.checks, label: ACTIONS['force-restart:hermes'].label }));`, r.env);
     const h = s.checks.find(c => c.id === 'hermes');
@@ -235,4 +239,21 @@ test('the guardian stops a drain someone else started once it has held messages 
   assert.equal(drainForceDue({ ...rs, forcedAt: new Date().toISOString() }, stall, now), false, 'not twice');
   assert.equal(drainForceDue({ ...rs, ours: true }, stall, now), false, 'an owner-asked restart bounds itself');
   assert.equal(drainForceDue({ ...rs, state: 'idle' }, stall, now), false);
+});
+
+test('the drain log is read from the current process only, latest drain wins, a finished wait is not "waiting"', async () => {
+  process.env.TROUBLESHOOT_STATE ||= fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'self-watch-'));
+  const { parseDrainLog } = await import('../lib/checks.mjs');
+  const at = s => new Date(s).getTime();
+  const log = [
+    '2026-11-09 08:00:22,065 INFO gateway.run: Restart deferred: waiting on 16 active work unit(s) (0 wedged and excluded, 0 restart-safe and excluded; 1408s remaining before force drain): []',
+    '2026-11-09 08:54:33,132 INFO gateway.run: SIGUSR1 received (systemctl reload / hermes gateway restart): performing a graceful gateway restart',
+    '2026-11-09 08:54:33,147 INFO gateway.run: Restart requested with 19 active work unit(s); deferring stop() until they finish (cap=1800s) so in-flight turns are not amputated (#77184)',
+    "2026-11-09 09:00:03,000 INFO gateway.run: Restart deferred: waiting on 15 active work unit(s) (0 wedged and excluded, 0 restart-safe and excluded; 1410s remaining before force drain): [{'kind': 'cron', 'job_id': 'x'}]",
+  ].join('\n');
+  const d = parseDrainLog(log, at('2026-11-09T09:00:13'), at('2026-11-09T08:04:00'));
+  assert.equal(d.since, at('2026-11-09T08:54:33.132'));
+  assert.deepEqual(d.waiting, { count: 15, cron: 1, remainingS: 1400 });
+  const done = parseDrainLog(log + '\n2026-11-09 09:04:34,442 INFO gateway.run: Restart deferred wait complete — active work drained; proceeding to stop()', at('2026-11-09T09:05:00'), at('2026-11-09T08:04:00'));
+  assert.equal(done.waiting, null);
 });
