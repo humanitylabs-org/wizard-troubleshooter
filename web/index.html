@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
+<meta name="wizard-troubleshoot-page" content="__TROUBLESHOOT_PAGE_KEY__">
 <title>Fix Wizard</title>
 <!-- Unified design: the shell's own tokens and kit, so the page follows the selected skin (and My skin) like every
      other app. WizardApp (app-client.js) pushes live skin changes and layers the skin stylesheets. This service reads
@@ -259,8 +260,16 @@ try { if (window.parent !== window) window.parent.postMessage({ type: 'wizard-tr
     if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closeSheet();
   });
 
+  // Sandboxed by the shell (browser owner boundary, wizard-os#133): this page's origin is opaque, so its calls carry
+  // the page key the server put in this page; other sandboxed pages can't read it. Not sandboxed: nothing extra.
+  const pageKey = (() => {
+    const m = document.querySelector('meta[name="wizard-troubleshoot-page"]'), k = m ? m.content : '';
+    if (m) m.remove();
+    return self.origin === 'null' && /^[\w-]{43}$/.test(k) ? k : '';
+  })();
   async function api(path, opts = {}) {
-    const r = await fetch('/troubleshoot/api/' + path, { cache: 'no-store', credentials: 'same-origin', ...opts });
+    const headers = pageKey ? { ...(opts.headers || {}), 'X-Wizard-Troubleshoot-Page': pageKey } : opts.headers;
+    const r = await fetch('/troubleshoot/api/' + path, { cache: 'no-store', credentials: 'same-origin', ...opts, ...(headers ? { headers } : {}) });
     let j = {}; try { j = await r.json(); } catch {}
     if (!r.ok) throw Object.assign(new Error(j.error || j.detail || ('HTTP ' + r.status)), { body: j });
     return j;

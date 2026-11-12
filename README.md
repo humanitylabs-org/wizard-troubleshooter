@@ -82,6 +82,11 @@ only those logins get in.
   `Tailscale-User-Login` must agree with whois.
 
 POSTs need the private origin plus `X-Wizard-Troubleshoot: 1`. The guardian uses a loopback-only token.
+With the box's browser owner boundary on (`WIZARD_BROWSER_BOUNDARY`, wizard-os#133), the Wizard shell loads this page
+sandboxed, so its calls say `Origin: null`. Such a call counts only with `X-Wizard-Troubleshoot-Page`, the per-box key
+the server writes into the page it serves (`$TROUBLESHOOT_STATE/page.key`); only then does it get a CORS answer
+(`Access-Control-Allow-Origin: null`). Any other `Origin: null` call is refused. Proof: `tests/sandboxed-page.test.mjs`
+and, in real Chromium, `tests/ui/sandboxed-frame-qa.cjs`.
 
 - **App addresses** (`Apps open inside Wizard`, `lib/launchers.mjs`): every installed app that opens at a path on the
   Wizard origin (`/messenger/`, `/files/`) must keep that path as its launcher address in both `apps.json` copies
