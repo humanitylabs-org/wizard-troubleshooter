@@ -306,10 +306,19 @@ try { if (window.parent !== window) window.parent.postMessage({ type: 'wizard-tr
     if (!diagnosed || otherProblem || recoverySent) return;
     const runId = recoveryParams.get('run_id');
     if (!runId) return;
-    try {
-      const r = await fetch('/wizard/v1/provider-recovery?run_id=' + encodeURIComponent(runId), { cache: 'no-store', credentials: 'same-origin' });
-      if (r.ok && (await r.json()).sent) { recoverySent = true; paintReconnect(null); }
-    } catch {}
+    // Asked through this page's own server, which asks the Agent Service box-local: a sandboxed page may not call the
+    // Agent Service, and with the browser boundary on only the shell holds its token (wizard-os#133). An older or
+    // unreachable server: a page that isn't sandboxed asks the Agent Service itself, as before.
+    const q = 'provider-recovery?run_id=' + encodeURIComponent(runId);
+    let sent = null;
+    try { sent = (await api(q)).sent === true; } catch {}
+    if (sent === null && !pageKey) {
+      try {
+        const r = await fetch('/wizard/v1/' + q, { cache: 'no-store', credentials: 'same-origin' });
+        if (r.ok && (await r.json()).sent) sent = true;
+      } catch {}
+    }
+    if (sent) { recoverySent = true; paintReconnect(null); }
   }
   setInterval(pollRecovery, 1000);
   paintReconnect(null);

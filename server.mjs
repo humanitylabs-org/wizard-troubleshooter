@@ -7,7 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
-import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease } from './lib/checks.mjs';
+import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastAgentRelease, httpGet } from './lib/checks.mjs';
 import { startRepair, loadConv, listConvs, busy, stopRepair, bridgeToken, bridgeRequest, decideApproval, attachmentFile } from './lib/repair.mjs';
 import { plansOn, planState, listPlans, approvePlan, dismissPlan, undoPlan } from './lib/repair-plan.mjs';
 import { toolDefs } from './lib/toolloop.mjs';
@@ -38,6 +38,27 @@ const PAGE_KEY_HEADER = 'x-wizard-troubleshoot-page';
 function sandboxedPageCall(req) {
   const k = req.headers[PAGE_KEY_HEADER];
   return req.headers.origin === 'null' && typeof k === 'string' && k.length === PAGE_KEY.length && crypto.timingSafeEqual(Buffer.from(k), Buffer.from(PAGE_KEY));
+}
+
+// Sign-in recovery card (wizard-os#133). The page wants to know when the Agent Service has re-sent the message that
+// waited for a sign-in. A sandboxed page may not call the Agent Service at all (it refuses every `Origin: null` call),
+// and with the boundary on even a top-level page needs the shell-only token, which no page outside the shell holds.
+// So this server asks for the page, box-local. WIZARD_SHELL_TOKEN_FILE (written by `wam troubleshooter`) names the
+// App Manager's token file; it is read on every call and sent only when it holds a token, so `wam browser-boundary
+// on|off` takes effect without a restart. The answer is cut down to two flags.
+const SHELL_TOKEN_HEADER = 'x-wizard-shell-token';
+function shellToken() {
+  const f = process.env.WIZARD_SHELL_TOKEN_FILE;
+  if (!f) return '';
+  try { const t = fs.readFileSync(f, 'utf8').trim(); return /^[a-f0-9]{64}$/.test(t) ? t : ''; } catch { return ''; }
+}
+async function providerRecovery(runId) {
+  const tok = shellToken();
+  const r = await httpGet({ port: CONFIG.agentPort, path: '/wizard/v1/provider-recovery?run_id=' + encodeURIComponent(runId), timeout: 5000, headers: tok ? { [SHELL_TOKEN_HEADER]: tok } : {} });
+  if (r.status === 404) return [404, { error: 'run_not_found' }];
+  if (r.status !== 200) return [502, { error: 'The Agent Service did not answer.' }];
+  let j = {}; try { j = JSON.parse(r.body); } catch { return [502, { error: 'The Agent Service did not answer.' }]; }
+  return [200, { sent: j?.sent === true, resent: j?.resent === true }];
 }
 
 const PORT = +(process.env.PORT || 9691);
@@ -233,6 +254,12 @@ const handler = async (req, res) => {
       const eng = expired && ENGINES.find(e => META[e].name === expired.provider || expired.id === `reply-${e}`);
       const reconnect = eng ? { engine: eng, ...META[eng], ...appLink(eng), state: 'expired' } : null;
       return send(res, 200, { ...s, ...extra, reconnect, direct: DIRECT_URL ? `${DIRECT_URL}${PREFIX}/` : null, release: await lastAgentRelease(), repair: busy() || null, actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '', ...(a.onlyWhenNeeded ? { onlyWhenNeeded: true } : {}) }])) });
+    }
+    if (req.method === 'GET' && p === '/api/provider-recovery') {
+      const runId = url.searchParams.get('run_id') || '';
+      if (!/^[\w.:-]{1,128}$/.test(runId)) return send(res, 400, { error: 'run_id' });
+      const [code, body] = await providerRecovery(runId);
+      return send(res, code, body);
     }
     if (req.method === 'GET' && p === '/api/incidents') return send(res, 200, { incidents: readIncidents(40) });
     if (req.method === 'POST' && p === '/api/action') {
