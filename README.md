@@ -82,6 +82,11 @@ only those logins get in.
   `Tailscale-User-Login` must agree with whois.
 
 POSTs need the private origin plus `X-Wizard-Troubleshoot: 1`. The guardian uses a loopback-only token.
+The sign-in recovery card (opened as `?provider=…&run_id=…`) asks this server, `GET /troubleshoot/api/provider-recovery`,
+which asks the Agent Service box-local (`AGENT_PORT`) and passes back only `{ sent, resent }`. With the boundary on it
+sends the shell token from `WIZARD_SHELL_TOKEN_FILE` (written by `wam troubleshooter`, read on every call, sent only when
+the file holds a token); the page itself never sees it.
+
 With the box's browser owner boundary on (`WIZARD_BROWSER_BOUNDARY`, wizard-os#133), the Wizard shell loads this page
 sandboxed, so its calls say `Origin: null`. Such a call counts only with `X-Wizard-Troubleshoot-Page`, the per-box key
 the server writes into the page it serves (`$TROUBLESHOOT_STATE/page.key`); only then does it get a CORS answer
