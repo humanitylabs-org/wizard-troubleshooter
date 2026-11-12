@@ -21,6 +21,25 @@ function guardianToken() {
   return t;
 }
 
+// Browser owner boundary (wizard-os#133). With the box's WIZARD_BROWSER_BOUNDARY switch on, the Wizard shell loads
+// this page sandboxed (it shows repair chat output), so its calls arrive with `Origin: null`: the opaque origin every
+// sandboxed app frame shares, so it proves nothing by itself. A null-origin call counts only when it carries the page
+// key this server put in the page it served (no other origin can read that page), and only then gets a CORS answer.
+// Without the switch the page is never sandboxed, no call says `Origin: null`, and nothing changes.
+function pageKey() {
+  const f = path.join(CONFIG.stateDir, 'page.key'); // kept across restarts, so an open page keeps working
+  try { const k = fs.readFileSync(f, 'utf8').trim(); if (/^[\w-]{43}$/.test(k)) return k; } catch {}
+  const k = crypto.randomBytes(32).toString('base64url');
+  try { fs.mkdirSync(CONFIG.stateDir, { recursive: true }); fs.writeFileSync(f, k, { mode: 0o600 }); } catch {}
+  return k;
+}
+const PAGE_KEY = pageKey();
+const PAGE_KEY_HEADER = 'x-wizard-troubleshoot-page';
+function sandboxedPageCall(req) {
+  const k = req.headers[PAGE_KEY_HEADER];
+  return req.headers.origin === 'null' && typeof k === 'string' && k.length === PAGE_KEY.length && crypto.timingSafeEqual(Buffer.from(k), Buffer.from(PAGE_KEY));
+}
+
 const PORT = +(process.env.PORT || 9691);
 const PREFIX = '/troubleshoot';
 // Direct line: a second loopback listener that Tailscale Serve publishes on its own HTTPS port, so the page is
@@ -180,9 +199,20 @@ const handler = async (req, res) => {
       if (who && OWNERS.size && !OWNERS.has(who.toLowerCase())) { logIncident({ kind: 'refused', by: who }); who = null; }
       if (!who) return send(res, 403, p.startsWith('/api/') ? { error: 'Open this from one of your own devices on your private network.' } : '<!doctype html><meta name=viewport content="width=device-width"><body style="background:#0b0d12;color:#e8eaf0;font:16px system-ui;padding:24px">Open this from one of your own devices on your private network.</body>');
     }
+    // The sandboxed repair page (see PAGE_KEY): its preflight learns only which headers it may send; every real call
+    // needs the page key, and only then may the page read the answer. Any other `Origin: null` call is refused.
+    const sandboxed = req.headers.origin === 'null';
+    if (sandboxed) {
+      if (req.method === 'OPTIONS' && p.startsWith('/api/')) {
+        res.writeHead(204, { 'Access-Control-Allow-Origin': 'null', 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type, X-Wizard-Troubleshoot, X-Wizard-Troubleshoot-Page', 'Access-Control-Max-Age': '600', Vary: 'Origin', 'Cache-Control': 'no-store' });
+        return res.end();
+      }
+      if (!p.startsWith('/api/') || !sandboxedPageCall(req)) return send(res, 403, { error: 'Cross-site request refused.' });
+      res.setHeader('Access-Control-Allow-Origin', 'null'); res.setHeader('Vary', 'Origin');
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       const origin = req.headers.origin;
-      if (!DEV_OPEN && (!origin || !ORIGINS.has(origin))) return send(res, 403, { error: 'Cross-site request refused.' });
+      if (!DEV_OPEN && !sandboxed && (!origin || !ORIGINS.has(origin))) return send(res, 403, { error: 'Cross-site request refused.' });
       if (req.headers['x-wizard-troubleshoot'] !== '1') return send(res, 403, { error: 'Missing request header.' });
     }
 
@@ -191,7 +221,7 @@ const handler = async (req, res) => {
       let body = ''; try { body = SHELL_WEB ? fs.readFileSync(path.join(SHELL_WEB, KIT[km[1]][0]), 'utf8') : ''; } catch {}
       return send(res, 200, body || '/* shell kit unavailable: system colours */', { 'Content-Type': `${KIT[km[1]][1]}; charset=utf-8`, 'Cache-Control': 'no-cache' });
     }
-    if ((req.method === 'GET' || req.method === 'HEAD') && (p === '/' || p === '/index.html')) return send(res, 200, fs.readFileSync(PAGE, 'utf8'), {
+    if ((req.method === 'GET' || req.method === 'HEAD') && (p === '/' || p === '/index.html')) return send(res, 200, fs.readFileSync(PAGE, 'utf8').replace('__TROUBLESHOOT_PAGE_KEY__', PAGE_KEY), {
       'Content-Security-Policy': `default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'${FRAMERS}`,
     });
     if ((req.method === 'GET' || req.method === 'HEAD') && p === '/api/ping') return send(res, 200, { ok: true });
