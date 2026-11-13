@@ -20,6 +20,7 @@ const AI_REPAIR_GAP = 2 * HOUR;
 const PRE_UPDATE_LOOKBACK = 6 * HOUR; // the link must have been healthy this long before an update for the update to take the blame
 const RESTART_MUST_HOLD = 30 * 60e3; // a restart that did not keep a piece working this long...
 const RESTART_PAUSE = HOUR; // ...is not repeated for this long; the guardian escalates once instead
+const RECUR_WINDOW = 2 * HOUR; // the same check failing again this soon means the last "recovery" fixed nothing
 const BUSY_NOTE_GAP = 30 * 60e3; // at most one "Hermes is slow" note per half hour, however often it flaps
 export const BUSY_TEXT = 'Hermes is taking a long time to accept new messages; your messages are queued and will send.';
 const STALL_ASK_AFTER = 5 * 60e3; // replies not starting this long, and the repair chat has not cleared it: ask the owner
@@ -72,6 +73,35 @@ export function restartHold(s, id, now) {
   const last = s.lastFix?.[id];
   if (last && now - last < RESTART_MUST_HOLD) return { held: true, fresh: true, hold: { since: now, until: now + RESTART_PAUSE, lastFix: last } };
   return { held: false };
+}
+
+// Recurrence = unfixed (13 Nov 2026, #46: four Agent Service outages in under three hours, each "recovered" by a
+// restart while a phone kept resending one request). Records this outage's start for each failing check and returns
+// how many earlier outages of the same check began in the last two hours (0 = a first outage).
+export function outageRecurrence(s, ids, now) {
+  s.outageStarts ||= {};
+  for (const [id, times] of Object.entries(s.outageStarts)) {
+    const kept = times.filter(t => now - t < RECUR_WINDOW);
+    if (kept.length) s.outageStarts[id] = kept; else delete s.outageStarts[id];
+  }
+  let before = 0;
+  for (const id of ids) {
+    const prior = s.outageStarts[id] || [];
+    before = Math.max(before, prior.length);
+    s.outageStarts[id] = [...prior, now];
+  }
+  return before;
+}
+const ordinal = n => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' })[n % 10] || 'th'}`;
+// What the guardian says when an outage ends. A repeat is never called fixed.
+export function recoveryText(outage, now) {
+  const mins = Math.max(1, Math.round((now - outage.since) / 60e3));
+  if (!outage.repeat) return { log: `Wizard is working again (problem lasted about ${mins} min).`, ok: true,
+    post: `**Wizard is working again.** The problem that started at ${bkk(outage.since)} (${ZONE_NAME}) is fixed; it lasted about ${mins} min. Details: /troubleshoot/` };
+  const n = outage.repeat + 1;
+  const said = `Wizard is answering again for now, but this is the ${ordinal(n)} time in 2 hours the same problem has stopped it, so it isn't fixed yet`;
+  return { log: `${said} (this time it lasted about ${mins} min).`, ok: false,
+    post: `**${said}.** This time it started at ${bkk(outage.since)} (${ZONE_NAME}) and lasted about ${mins} min. Wizard is looking for the cause. Details: /troubleshoot/` };
 }
 
 // Busy = the piece answers but is waiting on Hermes (see lib/checks.mjs). One plain note when it starts and one
@@ -208,10 +238,14 @@ async function main() {
   // Outage bookkeeping (only core links count as "Wizard is down").
   const core = failing.filter(isCoreFailure);
   if (core.length && !s.outage) {
-    s.outage = { since: now, first: core.map(c => `${c.label}: ${c.detail}`) };
+    const repeat = outageRecurrence(s, core.map(c => c.id), now);
+    const again = core.filter(c => s.outageStarts[c.id].length > 1).map(c => c.id);
+    s.outage = { since: now, first: core.map(c => `${c.label}: ${c.detail}`), ...(repeat ? { repeat, again } : {}) };
     const stalled = core.find(c => c.id === 'replies-start');
-    logIncident({ kind: 'outage', text: core.some(c => c.id === 'agent-reply') ? `Wizard can't reply: ${bare(core.find(c => c.id === 'agent-reply').detail)}`
-      : stalled ? `Replies aren't starting: ${bare(stalled.detail)}` : `Problem found: ${core.map(c => `${c.label} (${bare(c.detail)})`).join('; ')}` });
+    const what = core.some(c => c.id === 'agent-reply') ? `Wizard can't reply: ${bare(core.find(c => c.id === 'agent-reply').detail)}`
+      : stalled ? `Replies aren't starting: ${bare(stalled.detail)}` : `Problem found: ${core.map(c => `${c.label} (${bare(c.detail)})`).join('; ')}`;
+    logIncident({ kind: 'outage', ...(repeat ? { recurring: repeat + 1 } : {}),
+      text: repeat ? `This keeps coming back (the ${ordinal(repeat + 1)} time in 2 hours): ${what}. A restart only gets Wizard going for a while.` : what });
   }
 
   const crashing = [];
@@ -253,8 +287,26 @@ async function main() {
     // A drain restart (Hermes) lands minutes later: it is in progress, not a restart that didn't help.
     const pending = r.ok && r.pending && !fixed;
     actionsTaken.push({ label: c.label, action, fixed, pending, detail: c.detail, result: r.detail });
-    logIncident({ kind: 'auto-fix-result', action, ok: fixed, ...(pending ? { pending: true } : {}), text: fixed ? `${c.label} is working again.` : pending ? `${c.label} is restarting: it finishes the replies in progress first, then comes back by itself.` : `${c.label} is still not working after ${action.startsWith('rollback') ? 'undoing the update' : 'a restart'}.` });
+    logIncident({ kind: 'auto-fix-result', action, ok: fixed, ...(pending ? { pending: true } : {}), text: fixed ? (s.outage?.repeat ? `${c.label} answers again for now, but this keeps coming back.` : `${c.label} is working again.`) : pending ? `${c.label} is restarting: it finishes the replies in progress first, then comes back by itself.` : `${c.label} is still not working after ${action.startsWith('rollback') ? 'undoing the update' : 'a restart'}.` });
     if (fixed) s.fails[c.id] = 0;
+  }
+
+  // A repeat outage needs its cause found: the restart above only keeps Wizard usable meanwhile. Once per outage
+  // (and per AI_REPAIR_GAP), never for a sign-in, which has its own repair chat below.
+  const recurringCore = core.filter(c => c.id !== 'agent-reply' && (s.outage?.again || []).includes(c.id));
+  if (s.outage?.repeat && !s.outage.causeAsked && recurringCore.length) {
+    const n = s.outage.repeat + 1;
+    const text = recurringCore.map(c => `- ${c.label}: ${c.detail}`).join('\n');
+    if (DRY) console.log(`[dry-run] the same outage came back (${n} times in 2 h), would start a repair chat for the cause:\n${text}`);
+    else if (now - (s.lastAiRepair || 0) > AI_REPAIR_GAP) {
+      const r = await startAiRepair(`Automatic check: this has stopped Wizard ${n} times in the last 2 hours. Each restart brought it back only for a while, so restarting is not the fix:\n${text}\nFind what keeps causing it: the [event-loop] lines in the Agent Service journal (which routes stall), whether one device or client keeps resending the same request, and whether it began right after an update. Propose a repair for the cause (propose_repair), verify with check_status, and explain in plain words.`);
+      if (r?.id) {
+        s.lastAiRepair = now;
+        s.outage.causeAsked = r.id;
+        logIncident({ kind: 'repair-started', conversation: r.id, text: `${recurringCore.map(c => c.label).join(', ')} keeps failing again after restarts. Wizard asked your AI subscription to find the cause.` });
+        actionsTaken.push({ label: recurringCore.map(c => c.label).join(', '), action: 'ai-repair', fixed: false, conversation: r.id });
+      }
+    }
   }
 
   // A crash loop needs its cause found, not another restart: the repair chat, once per AI_REPAIR_GAP.
@@ -328,20 +380,19 @@ async function main() {
 
   // Recovery and reporting.
   const stillCore = (await (actionsTaken.length ? runChecks() : Promise.resolve(status))).checks.filter(isCoreFailure);
+  const repeat = s.outage?.repeat || 0;
   if (s.outage && !stillCore.length) {
-    const mins = Math.max(1, Math.round((now - s.outage.since) / 60e3));
-    logIncident({ kind: 'recovered', text: `Wizard is working again (problem lasted about ${mins} min).` });
-    if (s.outage.reported) {
-      await postThread(`guardian-recovered-${s.outage.since}`, `**Wizard is working again.** The problem that started at ${bkk(s.outage.since)} (${ZONE_NAME}) is fixed; it lasted about ${mins} min. Details: /troubleshoot/`);
-    }
+    const said = recoveryText(s.outage, now);
+    logIncident({ kind: 'recovered', ...(said.ok ? {} : { ok: false, recurring: repeat + 1 }), text: said.log });
+    if (s.outage.reported) await postThread(`guardian-recovered-${s.outage.since}`, said.post);
     s.outage = null;
   }
   if (actionsTaken.length) {
     const lines = actionsTaken.map(a => a.action === 'ai-repair'
       ? `- ${a.label}: restarts didn't fix it, so I've asked your Claude/ChatGPT subscription to repair it. Follow along: /troubleshoot/#r=${a.conversation}`
-      : `- ${a.label} stopped working (${bare(a.detail)}). I ${a.action.startsWith('rollback') ? 'undid the last update' : a.action === 'restart:app-addresses' ? 'repaired it' : a.action === 'force-restart:hermes' ? 'stopped the wait and restarted it' : 'restarted it'}: ${a.fixed ? 'it works again.' : a.pending ? 'it is finishing the replies in progress first, then comes back by itself.' : 'still not working, trying further steps.'}`);
+      : `- ${a.label} stopped working (${bare(a.detail)}). I ${a.action.startsWith('rollback') ? 'undid the last update' : a.action === 'restart:app-addresses' ? 'repaired it' : a.action === 'force-restart:hermes' ? 'stopped the wait and restarted it' : 'restarted it'}: ${a.fixed ? (repeat ? `it works for now, but this is the ${ordinal(repeat + 1)} time in 2 hours, so it isn't fixed.` : 'it works again.') : a.pending ? 'it is finishing the replies in progress first, then comes back by itself.' : 'still not working, trying further steps.'}`);
     if (s.outage) s.outage.reported = true;
-    await postThread(`guardian-${now}`, `**Wizard fixed itself** at ${bkk(now)} (${ZONE_NAME}).\n\n${lines.join('\n')}\n\nAnything still wrong? Open the Troubleshooter: /troubleshoot/`);
+    await postThread(`guardian-${now}`, `**${repeat ? 'Wizard got going again, but the problem keeps coming back,' : 'Wizard fixed itself'}** at ${bkk(now)} (${ZONE_NAME}).\n\n${lines.join('\n')}\n\nAnything still wrong? Open the Troubleshooter: /troubleshoot/`);
   }
   save(s);
   console.log(JSON.stringify({ overall: status.overall, failing: failing.map(f => f.id), busy: status.checks.filter(c => c.busy).map(c => c.id), actions: actionsTaken.map(a => `${a.action}:${a.fixed}`) }));
