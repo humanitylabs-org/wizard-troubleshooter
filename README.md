@@ -61,7 +61,10 @@ all be down and it still works.
   undoes a fresh Agent Service update if a restart doesn't help, and after ~6 failed minutes starts a repair
   chat itself. It waits while an Agent Service deploy holds `deploy.lock`, caps restarts at 3/hour per link,
   and if a restart did not keep a link working for 30 min it does not restart that link again for an hour,
-  escalating once instead. An Agent Service that answers its front page but is slow with its health check, or
+  escalating once instead. The same check failing again within 2 hours of its last outage is a problem that keeps
+  coming back (#46): it is logged as such, the guardian still restarts it so Wizard stays usable, but never reports it
+  as fixed ("answering again for now ... isn't fixed yet"), and asks the repair chat once for the cause (event-loop
+  stalls, one device resending a request, a fresh update). An Agent Service that answers its front page but is slow with its health check, or
   whose health says Hermes is slow to accept new messages (`queue.hermes_slow_to_accept`), is *busy*, not down:
   never restarted and logged once per episode. It reports once into the owner's Wizard thread (`GUARDIAN_THREAD`). Optional, off by default (`TROUBLESHOOTER_REPLY_PROBES=1`): it also sends a tiny real message through
   the main agent (`Your agent can reply`) and every connected repair engine. An HTTP 200 response containing
