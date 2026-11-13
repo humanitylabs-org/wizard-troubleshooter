@@ -330,8 +330,10 @@ try { if (window.parent !== window) window.parent.postMessage({ type: 'wizard-tr
     const bad = s.checks.filter(c => !c.ok && !c.skipped);
     $('pillDot').className = 'ts-dot ts-' + (s.overall === 'ok' ? 'ok' : s.overall === 'degraded' ? 'warn' : 'bad');
     $('pillText').textContent = s.overall === 'ok' ? 'All working' : bad.length === 1 ? bad[0].label + ': problem' : bad.length + ' problems';
-    $('alert').hidden = s.overall === 'ok' || !bad.length;
+    $('alert').hidden = !s.knownCause && (s.overall === 'ok' || !bad.length);
     if (bad.length) $('alertText').textContent = `I can already see a problem with ${bad[0].label.replace(/^Your /, 'your ')}: ${String(bad[0].detail || '').replace(/\.$/, '').toLowerCase()}. Tap below and I'll fix it.`;
+    // An outage that keeps coming back, named by the guardian (#47): one plain status until its fix is live.
+    if (s.knownCause) $('alertText').textContent = s.knownCause.text;
     $('checks').innerHTML = s.checks.map(c => `<div class="ts-row"><span class="ts-dot ${c.skipped ? '' : c.ok ? (c.slow ? 'ts-warn' : 'ts-ok') : 'ts-bad'}"></span><div class="ts-m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="ts-d">${esc(c.detail)}</div>`}</div></div>`).join('');
     // A failing check that names its fix puts that fix first, marked, even while the link itself looks healthy.
     const wanted = new Set(bad.map(c => c.fix).filter(Boolean));
@@ -357,7 +359,7 @@ try { if (window.parent !== window) window.parent.postMessage({ type: 'wizard-tr
     try {
       const { incidents } = await api('incidents');
       const seen = new Set();
-      const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result', 'repair-plan-result', 'repair-plan-undo-result'].includes(i.kind) && (i.text || i.detail))
+      const shown = incidents.filter(i => ['auto-fix-result', 'outage', 'recovered', 'owner-action-result', 'repair-plan-result', 'repair-plan-undo-result', 'cause-found'].includes(i.kind) && (i.text || i.detail))
         .filter(i => { const k = (i.text || i.detail) + when(i.at); return !seen.has(k) && seen.add(k); }).slice(0, 8);
       $('incWrap').hidden = !shown.length;
       if (shown.length) $('incidents').innerHTML = shown.map(i => `<div class="ts-row"><span class="ts-dot ${i.ok === false || i.kind === 'outage' ? 'ts-bad' : 'ts-ok'}"></span><div class="ts-m"><div class="ts-d">${esc(i.text || i.detail)}</div><div class="ts-small">${esc(when(i.at))}</div></div></div>`).join('');

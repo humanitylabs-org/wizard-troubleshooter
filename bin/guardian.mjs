@@ -9,7 +9,9 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import http from 'node:http';
-import { CONFIG, CHECKS, runChecks, doAction, deployInProgress, lastAgentRelease, logIncident, run, hermesRestartState } from '../lib/checks.mjs';
+import { CONFIG, CHECKS, ACTIONS, runChecks, doAction, deployInProgress, lastAgentRelease, logIncident, run, hermesRestartState } from '../lib/checks.mjs';
+import { switchOn } from '../lib/switches.mjs';
+import { gatherEvidence, nameCause, causeKey, causeText, limitActive, agentHealth, hotfixIssue, fileHotfix, fixLive } from '../lib/outage-cause.mjs';
 
 const STATE = path.join(CONFIG.stateDir, 'guardian.json');
 const TOKEN = path.join(CONFIG.stateDir, 'guardian.token');
@@ -196,6 +198,84 @@ async function pauseRestarts(s, c, hold, now, actionsTaken) {
   await postThread(`guardian-pause-${c.id}-${now}`, `**${text}** Details: /troubleshoot/`);
 }
 
+// Switch `recurring-cause` (#47): a repeat outage gets its cause named from the box's own evidence, contained (the
+// Agent Service's per-device limit, or undoing a fresh update), one hotfix filed through the Tracker, and one plain
+// status for the owner (s.knownCause, shown on the Troubleshooter page) until that fix is live. Returns the check ids
+// the containment covers, so the restart loop leaves them alone this run.
+const HOTFIX_AGAIN = 24 * HOUR; // one filed hotfix per cause a day, however often it comes back
+const FIX_CHECK_GAP = 30 * 60e3;
+const KNOWN_CAUSE_MAX = 7 * 24 * HOUR;
+async function containRecurring(s, recurring, now) {
+  const contained = new Set();
+  if (!recurring.length || s.outage.cause) return contained;
+  const ids = recurring.map(c => c.id);
+  const starts = ids.flatMap(id => s.outageStarts?.[id] || []).sort((a, b) => a - b);
+  const ev = await gatherEvidence(now - RECUR_WINDOW);
+  const release = await lastAgentRelease();
+  const cause = nameCause({ ...ev, release, firstStart: starts[0], now });
+  s.outage.cause = cause.kind;
+  if (cause.kind === 'unknown') {
+    logIncident({ kind: 'cause-unknown', text: `The box's logs don't show yet what keeps stopping ${recurring.map(c => c.label).join(', ')}; the repair chat looks further.` });
+    return contained;
+  }
+  const key = causeKey(cause);
+  let limiting = false, rolledBack = false, containment = '';
+  if (cause.kind === 'update') {
+    const act = ACTIONS['rollback:agent-service'] && ids.includes('agent-service') && s.rolledBack?.['agent-service'] !== cause.release ? 'rollback:agent-service' : null;
+    if (act && DRY) { console.log(`[dry-run] keeps coming back right after update ${cause.release}: would ${act}`); containment = 'would undo the last update (report-only)'; }
+    else if (act) {
+      const r = await doAction(act);
+      rolledBack = r.ok;
+      s.rolledBack ||= {}; s.rolledBack['agent-service'] = cause.release;
+      const back = await lastAgentRelease();
+      if (back) s.rolledBackTo['agent-service'] = back.target;
+      s.lastFix['agent-service'] = now;
+      contained.add('agent-service');
+      containment = r.ok ? `undid Agent Service release ${cause.release}` : `undoing release ${cause.release} failed`;
+      logIncident({ kind: 'auto-fix-result', action: act, ok: r.ok, text: r.ok ? 'This started right after the last update, so Wizard undid that update.' : `Wizard could not undo the last update: ${bare(r.detail)}.` });
+    }
+  } else {
+    limiting = limitActive(await agentHealth(), cause);
+    if (limiting && DRY) { console.log(`[dry-run] the Agent Service already limits ${cause.method} ${cause.route}: would hold restarts`); containment = 'the Agent Service limits it (report-only)'; }
+    else if (limiting) {
+      // The limit keeps one device from freezing the service; a restart would only cut off work in flight.
+      for (const id of ids) { s.restartHold[id] = { since: now, until: now + RESTART_PAUSE, lastFix: s.lastFix[id] || now, contained: key }; contained.add(id); }
+      containment = `the Agent Service limits ${cause.method} ${cause.route} per device`;
+    } else containment = 'none yet: this box\'s Agent Service has no per-device limit (wizard-agent-service#513), so Wizard restarts it when it freezes';
+  }
+  s.hotfixes ||= {};
+  for (const [k, h] of Object.entries(s.hotfixes)) if (now - h.at >= HOTFIX_AGAIN) delete s.hotfixes[k];
+  let filed = s.hotfixes[key];
+  if (!filed) {
+    const issue = hotfixIssue(cause, { loop: ev.loop, outages: starts, containment });
+    if (DRY) console.log(`[dry-run] would file ${issue.repo}: ${issue.title}`);
+    else {
+      const r = await fileHotfix(issue);
+      if (r.ok) { filed = s.hotfixes[key] = { at: now, url: r.url, ref: r.ref }; logIncident({ kind: 'hotfix-filed', cause: key, issue: r.ref, url: r.url, text: `Wizard asked for a fix: ${r.url || r.ref}` }); }
+      else logIncident({ kind: 'hotfix-failed', cause: key, text: `Wizard could not file the fix request: ${String(r.error).slice(0, 200)}` });
+    }
+  }
+  const text = causeText(cause, { limiting, rolledBack, filed: !!filed });
+  logIncident({ kind: 'cause-found', ok: false, cause: key, containment, ...(filed ? { issue: filed.ref } : {}), text });
+  if (DRY) { console.log(`[dry-run] cause: ${text}`); return contained; }
+  const same = s.knownCause?.key === key;
+  s.knownCause = { key, kind: cause.kind, text, since: same ? s.knownCause.since : now, issue: filed?.ref || '', url: filed?.url || '', checkedAt: now };
+  if (!same) await postThread(`guardian-cause-${key}`, `**${text}** Details: /troubleshoot/`);
+  return contained;
+}
+// The owner's status ends when the filed fix is live (or after a week); checked at most every half hour.
+async function knownCauseDone(s, now) {
+  const k = s.knownCause;
+  if (!k) return;
+  if (!switchOn('recurring-cause') || now - k.since >= KNOWN_CAUSE_MAX) { s.knownCause = null; return; }
+  if (!k.issue || now - (k.checkedAt || 0) < FIX_CHECK_GAP || DRY) return;
+  k.checkedAt = now;
+  if (await fixLive(k.issue)) {
+    s.knownCause = null;
+    logIncident({ kind: 'recovered', ok: true, text: `The fix for what kept stopping Wizard is live (${k.issue}).` });
+  }
+}
+
 async function main() {
   const s = load();
   const now = Date.now();
@@ -248,9 +328,15 @@ async function main() {
       text: repeat ? `This keeps coming back (the ${ordinal(repeat + 1)} time in 2 hours): ${what}. A restart only gets Wizard going for a while.` : what });
   }
 
+  // #47 (switch recurring-cause): name, contain and file the cause of a repeat outage, before any restart.
+  const contained = switchOn('recurring-cause') && s.outage?.repeat
+    ? await containRecurring(s, core.filter(c => c.id !== 'agent-reply' && (s.outage.again || []).includes(c.id)), now) : new Set();
+  await knownCauseDone(s, now);
+
   const crashing = [];
   for (const c of failing) {
     const def = byId[c.id];
+    if (contained.has(c.id)) continue; // contained above: limited per device, or the update was just undone
     if (c.busy) continue; // alive and waiting on Hermes: a restart cannot help and would cut off messages being sent
     if (c.crashLoop) { crashing.push(c); continue; } // systemd keeps restarting it already: another restart cannot fix it
     if (def.noAutoFix || c.id === 'agent-reply' || c.state === 'expired' || s.fails[c.id] < (def.threshold || 2)) continue;
@@ -299,7 +385,8 @@ async function main() {
     const text = recurringCore.map(c => `- ${c.label}: ${c.detail}`).join('\n');
     if (DRY) console.log(`[dry-run] the same outage came back (${n} times in 2 h), would start a repair chat for the cause:\n${text}`);
     else if (now - (s.lastAiRepair || 0) > AI_REPAIR_GAP) {
-      const r = await startAiRepair(`Automatic check: this has stopped Wizard ${n} times in the last 2 hours. Each restart brought it back only for a while, so restarting is not the fix:\n${text}\nFind what keeps causing it: the [event-loop] lines in the Agent Service journal (which routes stall), whether one device or client keeps resending the same request, and whether it began right after an update. Propose a repair for the cause (propose_repair), verify with check_status, and explain in plain words.`);
+      const named = s.knownCause && s.outage.cause && s.outage.cause !== 'unknown' ? `The box's logs point to: ${s.knownCause.text}${s.knownCause.url ? ` Hotfix filed: ${s.knownCause.url}.` : ''}\n` : '';
+      const r = await startAiRepair(`Automatic check: this has stopped Wizard ${n} times in the last 2 hours. Each restart brought it back only for a while, so restarting is not the fix:\n${text}\n${named}Find what keeps causing it: the [event-loop] lines in the Agent Service journal (which routes stall), whether one device or client keeps resending the same request, and whether it began right after an update. Propose a repair for the cause (propose_repair), verify with check_status, and explain in plain words.`);
       if (r?.id) {
         s.lastAiRepair = now;
         s.outage.causeAsked = r.id;
