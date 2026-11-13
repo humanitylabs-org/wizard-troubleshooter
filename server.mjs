@@ -11,6 +11,7 @@ import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastA
 import { startRepair, loadConv, listConvs, busy, stopRepair, bridgeToken, bridgeRequest, decideApproval, attachmentFile } from './lib/repair.mjs';
 import { plansOn, planState, listPlans, approvePlan, dismissPlan, undoPlan } from './lib/repair-plan.mjs';
 import { toolDefs } from './lib/toolloop.mjs';
+import { listing as switchListing, setSwitch, switchOn } from './lib/switches.mjs';
 import { allSignins, engineOrder, ENGINES, selectedEngine, saveEngine, appLink, META } from './lib/providers.mjs';
 
 function guardianToken() {
@@ -78,6 +79,12 @@ const PAGE = path.join(WEB, 'index.html');
 const SHELL_WEB = process.env.SHELL_WEB_DIR || [path.join(process.env.HOME || '', '.local/share/wizard-ux/current/web'), path.join(process.env.HOME || '', 'apps/wizard-os-home/web')].find(d => { try { return fs.statSync(path.join(d, 'kit')).isDirectory(); } catch { return false; } }) || '';
 const KIT = { 'wizard-tokens.css': ['kit/wizard-tokens.css', 'text/css'], 'wizard-ui.css': ['kit/wizard-ui.css', 'text/css'], 'app-client.js': ['core/app-client.js', 'text/javascript'] };
 const DEV_OPEN = process.env.TROUBLESHOOT_DEV_NO_AUTH === '1'; // local tests only
+// #47 (switch recurring-cause): the guardian's one plain status about an outage that keeps coming back, until its fix
+// is live. Only the text and the filed issue reach the page.
+function knownCause() {
+  if (!switchOn('recurring-cause')) return null;
+  try { const k = JSON.parse(fs.readFileSync(path.join(CONFIG.stateDir, 'guardian.json'), 'utf8')).knownCause; return k?.text ? { text: String(k.text), since: k.since, issue: k.issue || '', url: k.url || '' } : null; } catch { return null; }
+}
 // Where the real peer address comes from. caddy: the private gateway sets X-Private-Peer from the connection.
 // tailscale-serve: Tailscale Serve proxies from loopback and overwrites X-Forwarded-For with the peer's tailnet address
 // (client copies are replaced, verified on oscarvps), so only a loopback connection carrying it is trusted.
@@ -234,7 +241,8 @@ const handler = async (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       const origin = req.headers.origin;
       if (!DEV_OPEN && !sandboxed && (!origin || !ORIGINS.has(origin))) return send(res, 403, { error: 'Cross-site request refused.' });
-      if (req.headers['x-wizard-troubleshoot'] !== '1') return send(res, 403, { error: 'Missing request header.' });
+      // wizard.app-switches/1 flips (the Tracker's Try it) send X-Wizard-Switch: 1 instead.
+      if (req.headers['x-wizard-troubleshoot'] !== '1' && !(p === '/api/switches' && req.headers['x-wizard-switch'] === '1')) return send(res, 403, { error: 'Missing request header.' });
     }
 
     const km = p.match(/^\/kit\/([\w.-]+)$/);
@@ -253,7 +261,12 @@ const handler = async (req, res) => {
       const expired = s.checks.find(c => !c.ok && c.state === 'expired');
       const eng = expired && ENGINES.find(e => META[e].name === expired.provider || expired.id === `reply-${e}`);
       const reconnect = eng ? { engine: eng, ...META[eng], ...appLink(eng), state: 'expired' } : null;
-      return send(res, 200, { ...s, ...extra, reconnect, direct: DIRECT_URL ? `${DIRECT_URL}${PREFIX}/` : null, release: await lastAgentRelease(), repair: busy() || null, actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '', ...(a.onlyWhenNeeded ? { onlyWhenNeeded: true } : {}) }])) });
+      return send(res, 200, { ...s, ...extra, reconnect, direct: DIRECT_URL ? `${DIRECT_URL}${PREFIX}/` : null, release: await lastAgentRelease(), repair: busy() || null, knownCause: knownCause(), actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '', ...(a.onlyWhenNeeded ? { onlyWhenNeeded: true } : {}) }])) });
+    }
+    if (req.method === 'GET' && p === '/api/switches') return send(res, 200, switchListing());
+    if (req.method === 'POST' && p === '/api/switches') {
+      const b = await readBody(req);
+      try { return send(res, 200, setSwitch(b.id, b.on)); } catch (e) { return send(res, e.status || 400, { error: e.message }); }
     }
     if (req.method === 'GET' && p === '/api/provider-recovery') {
       const runId = url.searchParams.get('run_id') || '';

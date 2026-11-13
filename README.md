@@ -64,7 +64,21 @@ all be down and it still works.
   escalating once instead. The same check failing again within 2 hours of its last outage is a problem that keeps
   coming back (#46): it is logged as such, the guardian still restarts it so Wizard stays usable, but never reports it
   as fixed ("answering again for now ... isn't fixed yet"), and asks the repair chat once for the cause (event-loop
-  stalls, one device resending a request, a fresh update). An Agent Service that answers its front page but is slow with its health check, or
+  stalls, one device resending a request, a fresh update).
+  **Switch `recurring-cause` (#47, off by default; `GET/POST /troubleshoot/api/switches`, `wizard.app-switches/1`,
+  Tracker id `troubleshoot:recurring-cause`; state in `<state>/switches.json`).** With it on, a repeat outage also gets
+  its cause named from the box's own evidence (`lib/outage-cause.mjs`): the Agent Service's `[event-loop]` journal
+  lines (`GUARDIAN_EVENT_LOOP_LOG` reads a file instead) and, if the box keeps one, the gateway's JSON access log
+  (`GUARDIAN_ACCESS_LOG`, Caddy `format json`): one device sending at least 1 request a second and most of one route's
+  requests is a client loop. It is contained inside Wizard: when the Agent Service's per-device limit
+  (wizard-agent-service#513, `client_storm` in `/wizard/health`) covers that route, restarts of it are held for an hour;
+  when the first outage began within 2 h of an Agent Service update, that update is undone. One hotfix a day per cause
+  is filed through the WizardOS Tracker on this box (`board_report_bug` on its `/mcp`; `GUARDIAN_TRACKER_URL`, else its
+  `apps.json` loopback address; repo `wizard-ux` for a client loop, `wizard-agent-service` for an update,
+  `GUARDIAN_HOTFIX_REPO` overrides) with the evidence, never a device address or token. The owner sees one plain status
+  ("A phone is resending one request in a loop; Wizard is limiting it; a fix is being built") on the Troubleshooter
+  page and once in the Wizard thread, until the filed issue is merged (`ready-to-test`) or closed, or for a week.
+  Report-only mode says what it would do and files nothing. An Agent Service that answers its front page but is slow with its health check, or
   whose health says Hermes is slow to accept new messages (`queue.hermes_slow_to_accept`), is *busy*, not down:
   never restarted and logged once per episode. It reports once into the owner's Wizard thread (`GUARDIAN_THREAD`). Optional, off by default (`TROUBLESHOOTER_REPLY_PROBES=1`): it also sends a tiny real message through
   the main agent (`Your agent can reply`) and every connected repair engine. An HTTP 200 response containing
