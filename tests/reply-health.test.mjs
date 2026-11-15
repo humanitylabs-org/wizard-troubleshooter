@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
-import { providerFailure, cachedProbe, replyResult } from '../lib/reply-health.mjs';
+import { providerFailure, cachedProbe, replyResult, knownProbe, resetAt, MARK_TTL } from '../lib/reply-health.mjs';
 const ROOT = path.resolve(import.meta.dirname, '..'), NODE = process.execPath;
 const tmp = () => fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'reply-health-'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -125,4 +125,33 @@ test('guardian needs two distinct failed replies, reports once, starts backup re
     const reports = fs.readFileSync(path.join(state, 'reports'), 'utf8'); assert.equal((reports.match(/Wizard can't reply/g) || []).length, 1); assert.match(reports, /Claude sign-in expired/);
     good = true; expire(); await tick(); const incidents = fs.readFileSync(path.join(state, 'incidents.jsonl'), 'utf8'); assert.match(incidents, /"kind":"outage"/); assert.match(incidents, /"kind":"recovered"/); assert.match(fs.readFileSync(path.join(state, 'reports'), 'utf8'), /Wizard is working again/);
   } finally { api.close(); ts.close(); }
+});
+
+// #50: a limited / expired mark from one failed run must not lock Claude out of the picker for days.
+const mark = (state, extra) => fs.writeFileSync(path.join(state, 'reply-claude.json'), JSON.stringify({ ok: false, state: 'limited', signin: false, provider: 'Claude', detail: 'Claude usage limit reached.', ...extra }));
+const claudeIn = async base => (await (await fetch(base + 'engines')).json()).engines.find(e => e.engine === 'claude');
+test('a limited mark expires after an hour (or at the stated reset time) and the picker shows Claude ready', async () => {
+  const state = tmp(), now = Date.now();
+  mark(state, { checkedAt: now - 10 * 60e3 }); assert.equal(knownProbe(state, 'claude', now).state, 'limited');
+  assert.equal(knownProbe(state, 'claude', now - 10 * 60e3 + MARK_TTL + 1), null);
+  mark(state, { checkedAt: now - 10 * 60e3, resetAt: now + 5 * 60e3 }); assert.equal(knownProbe(state, 'claude', now).state, 'limited'); assert.equal(knownProbe(state, 'claude', now + 5 * 60e3 + 1), null);
+  assert.equal(resetAt('Claude AI usage limit reached|' + Math.floor((now + 1800e3) / 1000), now), Math.floor((now + 1800e3) / 1000) * 1000);
+  assert.equal(resetAt('Rate limit reached. Please try again in 20 minutes.', now), now + 20 * 60e3);
+  assert.equal(resetAt('Usage limit reached. It resets at 2099-01-01T00:00:00Z', now), null, 'an absurd reset time falls back to the hour');
+  assert.equal(resetAt('Claude usage limit reached.', now), null);
+  mark(state, { checkedAt: now - 2 * 3600e3 }); // the observed 13 Nov file, two hours old, no reset time
+  const s = await server(env(state, fixtures(state, 'OK')));
+  try { const c = await claudeIn(s.base); assert.equal(c.ok, true); assert.equal(c.reason, ''); } finally { s.p.kill(); }
+});
+test('a successful Claude repair run clears a fresh limited mark, so the next picker shows Claude ready', async () => {
+  const state = tmp(); const f = fixtures(state, 'Claude: I looked into it and everything is fine.');
+  fs.writeFileSync(f.CLAUDE_BIN, '#!/bin/sh\nprintf \'%s\\n\' \'' + JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'I looked into it and everything is fine.' }] } }) + '\'\nprintf \'%s\\n\' \'{"type":"result","is_error":false}\'\n', { mode: 0o755 });
+  mark(state, { checkedAt: Date.now() });
+  const s = await server(env(state, f));
+  try {
+    const before = await claudeIn(s.base); assert.equal(before.ok, false); assert.equal(before.state, 'limited');
+    const c = await chat(s.base, 'claude'); assert.ok(c.events.some(e => e.role === 'agent' && e.engine === 'claude'));
+    const after = await claudeIn(s.base); assert.equal(after.ok, true); assert.equal(after.reason, '');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(state, 'reply-claude.json'))).ok, true);
+  } finally { s.p.kill(); }
 });
