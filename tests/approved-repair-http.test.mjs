@@ -106,6 +106,7 @@ test('screenshots are stored with the owner message and served back only as imag
   } finally { child.kill(); }
 });
 
+// owner-correction: humanitylabs-org/wizard-troubleshooter#37 · 2026-11-08 · "The troubleshooter needs the capacity to fix the system when it's broken. That's its sole purpose."
 test('direct line: a second listener for Tailscale Serve trusts only its forwarded peer, and status advertises it', async () => {
   const state = tmp(), direct = 20000 + Math.floor(Math.random() * 20000);
   const { port, child } = await startServer(hermetic(state, { TROUBLESHOOT_DIRECT_PORT: String(direct), TROUBLESHOOT_DIRECT_URL: 'https://box.example.ts.net:9691' }));

@@ -7,6 +7,7 @@ import path from 'node:path'
 
 // Wizard's phone and desktop shell probe the repair page with HEAD before it opens the page.
 // A 404 here made the shell say "The repair page isn't available" while the page was up (8 Nov 2026).
+// owner-correction: humanitylabs-org/wizard-troubleshooter#37 · 2026-11-08 · "The troubleshooter needs the capacity to fix the system when it's broken. That's its sole purpose."
 test('repair page and ping answer HEAD like GET so the shell opens the real Troubleshooter', async () => {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-head-'))
   const port = 30000 + Math.floor(Math.random() * 20000)

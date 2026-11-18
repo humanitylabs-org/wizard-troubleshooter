@@ -31,6 +31,7 @@ test('the release policy allows framing and pinging the own line', async () => {
   assert.equal(r.ok, true, r.detail);
 });
 
+// owner-correction: humanitylabs-org/wizard-troubleshooter#37 · 2026-11-08 · "The troubleshooter needs the capacity to fix the system when it's broken. That's its sole purpose."
 test('an older pinned policy without the own line fails and names the mount', async () => {
   assert.deepEqual(directLineGaps(PINNED), ['opening', 'checking']);
   assert.deepEqual(directLineGaps("default-src 'self'; frame-src https://*.ts.net:8444"), ['opening', 'checking'], 'only port 9691 is the own line');
