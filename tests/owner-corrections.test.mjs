@@ -1,4 +1,4 @@
-// The owner-correction guard (wizard-ux#1565, copied for wizard-troubleshooter#53): a test that quotes an owner's correction can't be deleted, edited,
+// The owner-correction guard (wizard-ux#1565): a test that quotes an owner's correction can't be deleted, edited,
 // weakened or skipped without the `owner-approved-change` label and a link to the owner's own approving comment.
 // Runs the real tool against throwaway git repos (base commit → PR commit), the way CI runs it.
 import { test } from 'node:test';
@@ -172,4 +172,16 @@ test('this repo’s own owner-correction markers are well-formed and each guards
     assert.deepEqual(malformed, [], f);
     for (const m of found) assert.ok(m.asserts.length > 0, `${f}:${m.line} guards no assertion`);
   }
+});
+
+test('several tests may quote the same words: deleting one names that file, not a neighbour', async () => {
+  const other = `import test from 'node:test';\nimport assert from 'node:assert/strict';\n\n${MARK}\ntest('the pill still opens it', () => {\n  assert.equal(pill(), 'open');\n});\n`;
+  const r = repo({ 'tests/a.test.mjs': TEST, 'tests/b.test.mjs': other });
+  try {
+    r.rm('tests/a.test.mjs');
+    const res = await run(r, r.commit());
+    assert.equal(res.ok, false);
+    assert.equal(res.problems.length, 1, res.problems.join('\n'));
+    assert.match(res.problems[0], /^tests\/a\.test\.mjs:\d+: .*deleted/);
+  } finally { r.done(); }
 });

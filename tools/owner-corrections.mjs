@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Owner-correction guard (wizard-ux#1565; copied unchanged into wizard-troubleshooter for #53, keep the copies in step). A test that pins something the owner explicitly corrected carries a marker:
+// Owner-correction guard (wizard-ux#1565; copied into wizard-troubleshooter for #53; keep the two in step). A test that pins something the owner explicitly corrected carries a marker:
 //   // owner-correction: humanitylabs-org/wizard-ux#1472 · 2026-11-15 · "It should pop up."
 // A PR fails this check when it deletes such a test, removes or edits its marker or quote, drops one of the assertions
 // that follow the marker, or marks the test skip/todo, unless it carries the label `owner-approved-change` and its
@@ -54,16 +54,23 @@ export function scan(path, source) {
 export function compare(baseMarkers, headMarkers) {
   const problems = [];
   const pool = headMarkers.map(m => ({ ...m, used: false }));
+  const keeps = (b, h) => b.asserts.every(a => h.asserts.includes(a)) && (b.skipped || !h.skipped);
+  // Several tests may quote the same words (one correction, several tests). Pair base and head markers in passes, from
+  // the closest match to the loosest, so a deleted test can't borrow (and hide behind) another file's marker:
+  // same path and everything kept, then moved with everything kept, then same path, then any copy.
+  const passes = [(b, h) => h.path === b.path && keeps(b, h), (b, h) => keeps(b, h), (b, h) => h.path === b.path, () => true];
+  const pair = new Map();
+  for (const ok of passes) for (const b of baseMarkers) {
+    if (pair.has(b)) continue;
+    const h = pool.find(x => !x.used && x.text === b.text && ok(b, x));
+    if (h) { h.used = true; pair.set(b, h); }
+  }
   for (const b of baseMarkers) {
-    const same = pool.filter(h => !h.used && h.text === b.text);
-    if (!same.length) {
+    const best = pair.get(b);
+    if (!best) {
       problems.push(`${b.path}:${b.line}: owner-correction test for ${b.ref} (${b.date}, ${b.quote}) was deleted, or its marker or quote was edited.`);
       continue;
     }
-    // Prefer the copy that kept everything (same path first, so a duplicate elsewhere can't hide a weakened original).
-    const keeps = h => b.asserts.every(a => h.asserts.includes(a)) && (b.skipped || !h.skipped);
-    const best = same.find(h => h.path === b.path && keeps(h)) || same.find(keeps) || same.find(h => h.path === b.path) || same[0];
-    best.used = true;
     const lost = b.asserts.filter(a => !best.asserts.includes(a));
     if (lost.length) problems.push(`${best.path}:${best.line}: owner-correction test for ${b.ref} lost ${lost.length} assertion(s): ${lost.map(a => JSON.stringify(a.slice(0, 120))).join('; ')}`);
     if (best.skipped && !b.skipped) problems.push(`${best.path}:${best.line}: owner-correction test for ${b.ref} is now marked skip/todo.`);
