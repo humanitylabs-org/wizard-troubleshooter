@@ -1,5 +1,5 @@
 name: Owner corrections guard
-# wizard-ux#1565 (same guard in wizard-troubleshooter, #53): a test that quotes an owner's correction (`// owner-correction: <owner>/<repo>#<n> · <date> · "<quote>"`)
+# wizard-ux#1565 (copied for wizard-troubleshooter#53): a test that quotes an owner's correction (`// owner-correction: <owner>/<repo>#<n> · <date> · "<quote>"`)
 # can't be deleted, edited, weakened or skipped unless the PR has the `owner-approved-change` label and links the
 # owner's approving comment. pull_request_target runs main's copy of this check: the PR's files are read as git data
 # (git show / git grep) and never executed, so a PR can't switch the guard off by editing it.
