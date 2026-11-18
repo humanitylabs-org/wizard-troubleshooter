@@ -1,0 +1,44 @@
+name: Owner corrections guard
+# wizard-ux#1565 (same guard in wizard-troubleshooter, #53): a test that quotes an owner's correction (`// owner-correction: <owner>/<repo>#<n> · <date> · "<quote>"`)
+# can't be deleted, edited, weakened or skipped unless the PR has the `owner-approved-change` label and links the
+# owner's approving comment. pull_request_target runs main's copy of this check: the PR's files are read as git data
+# (git show / git grep) and never executed, so a PR can't switch the guard off by editing it.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+concurrency:
+  group: owner-corrections-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  guard:
+    name: Owner corrections guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch the PR head as data
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags "https://github.com/${GITHUB_REPOSITORY}" "refs/pull/${PR}/head"
+          git cat-file -e "${HEAD_SHA}^{commit}"
+      - name: Owner-correction tests are kept, or the owner approved the change
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tools/owner-corrections.mjs

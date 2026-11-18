@@ -96,6 +96,7 @@ test('the executor refuses a plan without approval and leaves files alone', () =
   assert.match(fs.readFileSync(path.join(dirOf(rec.id), 'transcript.log'), 'utf8'), /REFUSED: no owner approval/);
 });
 
+// owner-correction: humanitylabs-org/wizard-troubleshooter#37 · 2026-11-08 · "The troubleshooter needs the capacity to fix the system when it's broken. That's its sole purpose."
 test('approved plan: backup, apply, transcript, verify; runs once; undo restores every touched file', () => {
   fs.writeFileSync(target, 'mode=broken\nother=1\n');
   const touched = path.join(HOME, 'demo/by-command.txt');
