@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
 const page=fs.readFileSync(new URL('../web/index.html',import.meta.url),'utf8');
+// owner-correction: humanitylabs-org/wizard-troubleshooter#25 · 2026-10-31 · "the UX should be how I created it, with one-tap buttons"
 test('the welcome screen keeps James\'s original one-tap repair path',()=>{
  assert.match(page, /<h1>Fix Wizard<\/h1>/);
  assert.match(page, /What's wrong\?/);
