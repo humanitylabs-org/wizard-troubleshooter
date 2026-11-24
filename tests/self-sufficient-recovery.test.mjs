@@ -218,7 +218,9 @@ test('the owner is never sent to Telegram, a console or another tool', () => {
   const prompt = fs.readFileSync(path.join(APP, 'REPAIR_PROMPT.md'), 'utf8');
   assert.match(prompt, /Never tell them to use Telegram or another\s+chat app, a `\/restart` command, a server console, SSH, a terminal or another AI tool/);
   const page = fs.readFileSync(path.join(APP, 'web/index.html'), 'utf8');
-  const shown = page.replace(/<script\b[^>]*>[\s\S]*?<\/script[^>]*>/gi, s => (s.match(/(['"`])(?:(?!\1).)*\1/g) || []).join(' '));
+  // One exception (#62, until a phone path exists): only the owner can renew the server's own Claude sign-in, and the
+  // page says how in exactly these words.
+  const shown = page.replace(/<script\b[^>]*>[\s\S]*?<\/script[^>]*>/gi, s => (s.match(/(['"`])(?:(?!\1).)*\1/g) || []).join(' ')).replaceAll('Open a terminal on the server.', '');
   assert.doesNotMatch(shown, /telegram|\bssh\b|console|terminal|claude cli/i);
   for (const f of ['lib/checks.mjs', 'bin/guardian.mjs', 'lib/toolloop.mjs', 'lib/repair.mjs', 'server.mjs']) {
     const code = fs.readFileSync(path.join(APP, f), 'utf8').split('\n').filter(l => !/^\s*\/\//.test(l)).map(l => l.replace(/\s\/\/ .*$/, ''));

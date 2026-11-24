@@ -80,15 +80,27 @@ all be down and it still works.
   page and once in the Wizard thread, until the filed issue is merged (`ready-to-test`) or closed, or for a week.
   Report-only mode says what it would do and files nothing. An Agent Service that answers its front page but is slow with its health check, or
   whose health says Hermes is slow to accept new messages (`queue.hermes_slow_to_accept`), is *busy*, not down:
-  never restarted and logged once per episode. It reports once into the owner's Wizard thread (`GUARDIAN_THREAD`). Optional, off by default (`TROUBLESHOOTER_REPLY_PROBES=1`): it also sends a tiny real message through
-  the main agent (`Your agent can reply`) and every connected repair engine. An HTTP 200 response containing
-  a provider-auth failure is a failed reply, not a healthy service. Healthy results are shared for ten minutes;
-  failures retry each minute. `GET /api/status?fresh=1` forces a new check. After two distinct failed main-agent
-  replies, it reports the outage and starts the independent backup repair chat. A dead sign-in spends no restart
-  budget. Recovery is logged and reported once. Keys and provider output are never saved in the probe cache.
-  Default is off because those messages cost tokens all day (~144 main-agent turns, ~430 provider pings) and a
-  failed probe alone can declare Wizard down. Without them, a sign-in or limit failure is still caught from real
-  repair-chat replies.
+  never restarted and logged once per episode. It reports once into the owner's Wizard thread (`GUARDIAN_THREAD`). On by default, rate-limited (#62): it also sends one tiny real message through
+  the main agent (`Your agent can reply`) at most once an hour while that works (`REPLY_CHECK_EVERY_MIN`, default
+  60), again 5 min after a failure, and at once when Hermes has marked its sign-in failed since the last check (a
+  chat just failed on it). A failed run (an error, however fast, an empty answer or anything but OK) is a failed
+  reply; an HTTP 200 response containing a provider-auth failure is one too. When the check can't run (Hermes not
+  answering, which the Hermes check reports, or this box's key for Hermes's API refused) it is skipped, not red.
+  `TROUBLESHOOTER_REPLY_PROBES=0` turns it off; `=1` is the old every-10-min probe plus one to every connected repair
+  engine (those stay opt-in). `GET /api/status?fresh=1` forces a new check. After two distinct failed main-agent
+  replies, or a red `Your agent's AI sign-in`, it reports the outage and starts the independent backup repair chat.
+  A dead sign-in spends no restart budget. Recovery is logged and reported once. Keys and provider output are never
+  saved in the probe cache. #17 had switched all of this off (tokens all day); on 24 Nov 2026 that let no chat get a
+  reply for six hours while every check was green.
+
+  `Your agent's AI sign-in` (#62, costs nothing) reads Hermes's `config.yaml` for the main provider and then only
+  metadata: the credential pool's own marks in `auth.json` (dead, the reason) and the Claude login file's expiry,
+  whether it holds a renewal token and when it was written (`CLAUDE_SUBSCRIPTION_DIRECTSDK_CONFIG_DIR` /
+  `CLAUDE_CONFIG_DIR` in Hermes's `.env`, else `~/.claude`). It is red when the login the agent uses is missing or
+  marked dead and nobody has signed in since. A Claude login folder is the **server sign-in** (renewed with `claude`
+  then `/login` in a terminal on the server) unless App Manager bound the Claude app to it (`wam alongside`, the
+  `x-wizard-claude-login` override under `RUNTIPI_ROOT`) or it lives in the Claude app's data; only then do rows and
+  the reconnect screen send the owner to the Claude app, whose own sign-in is otherwise separate.
 
 Owner gate: the service takes the peer address from the front door and confirms a human (untagged) tailnet principal
 via Tailscale whois, the same policy as the sign-in bridge, without depending on it. With `TROUBLESHOOT_OWNERS` set,

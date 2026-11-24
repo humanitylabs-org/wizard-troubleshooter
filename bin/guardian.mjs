@@ -16,6 +16,8 @@ import { gatherEvidence, nameCause, causeKey, causeText, limitActive, agentHealt
 const STATE = path.join(CONFIG.stateDir, 'guardian.json');
 const TOKEN = path.join(CONFIG.stateDir, 'guardian.token');
 const HOUR = 3600e3;
+// A dead sign-in is not fixed by a restart or by undoing an update: the reply check and the agent's sign-in check (#62).
+const NOT_A_RESTART = ['agent-reply', 'agent-signin'];
 const MAX_FIXES_PER_HOUR = 3;
 const ROLLBACK_WINDOW = 2 * HOUR; // undo only an update installed this recently
 const AI_REPAIR_GAP = 2 * HOUR;
@@ -330,7 +332,7 @@ async function main() {
 
   // #47 (switch recurring-cause): name, contain and file the cause of a repeat outage, before any restart.
   const contained = switchOn('recurring-cause') && s.outage?.repeat
-    ? await containRecurring(s, core.filter(c => c.id !== 'agent-reply' && (s.outage.again || []).includes(c.id)), now) : new Set();
+    ? await containRecurring(s, core.filter(c => !NOT_A_RESTART.includes(c.id) && (s.outage.again || []).includes(c.id)), now) : new Set();
   await knownCauseDone(s, now);
 
   const crashing = [];
@@ -379,7 +381,7 @@ async function main() {
 
   // A repeat outage needs its cause found: the restart above only keeps Wizard usable meanwhile. Once per outage
   // (and per AI_REPAIR_GAP), never for a sign-in, which has its own repair chat below.
-  const recurringCore = core.filter(c => c.id !== 'agent-reply' && (s.outage?.again || []).includes(c.id));
+  const recurringCore = core.filter(c => !NOT_A_RESTART.includes(c.id) && (s.outage?.again || []).includes(c.id));
   if (s.outage?.repeat && !s.outage.causeAsked && recurringCore.length) {
     const n = s.outage.repeat + 1;
     const text = recurringCore.map(c => `- ${c.label}: ${c.detail}`).join('\n');
@@ -411,13 +413,17 @@ async function main() {
   }
 
   // A dead login cannot be restarted away. Start the independent repair chat after two real failures.
-  const replyDown = core.find(c => c.id === 'agent-reply');
+  // The agent's own sign-in check (#62) says the same without spending a message, and names where to renew it.
+  const replyDown = core.find(c => c.id === 'agent-reply') || core.find(c => c.id === 'agent-signin');
+  const signinFix = status.checks.find(c => c.id === 'agent-signin')?.howToFix || '';
+  const serverLogin = status.checks.find(c => c.id === 'agent-signin')?.login === 'server';
   if (replyDown && s.outage && !s.outage.reported) {
-    const reported = await postThread(`guardian-outage-${s.outage.since}`, `**Wizard can't reply: ${bare(replyDown.detail)}.** Open the Troubleshooter and tap Sign in again to reconnect your account from this device: /troubleshoot/`);
+    const how = serverLogin ? `${signinFix} Details: /troubleshoot/` : 'Open the Troubleshooter and tap Sign in again to reconnect your account from this device: /troubleshoot/';
+    const reported = await postThread(`guardian-outage-${s.outage.since}`, `**Wizard can't reply: ${bare(replyDown.detail)}.** ${replyDown.id === 'agent-signin' && !serverLogin ? 'Open the Troubleshooter: /troubleshoot/' : how}`);
     if (reported) s.outage.reported = true;
   }
   if (replyDown && !DRY && !s.outage?.repairStarted) {
-    const r = await startAiRepair(`Wizard can't reply: ${replyDown.detail} Check which sign-in expired. Do not restart services to fix a sign-in. Explain how to reconnect through the connection app from the phone. Do not change credentials.`);
+    const r = await startAiRepair(`Wizard can't reply: ${replyDown.detail} Check which sign-in expired. Do not restart services to fix a sign-in. ${serverLogin ? `The agent's sign-in is the server's own Claude login, which the Claude app cannot renew; tell the owner: ${signinFix}` : 'Explain how to reconnect through the connection app from the phone.'} Do not change credentials.`);
     if (r?.id) { s.lastAiRepair = now; s.outage.repairStarted = r.id; logIncident({ kind: 'repair-started', conversation: r.id, text: `Wizard can't reply. A backup repair chat has started; sign in again from the Troubleshooter.` }); }
   }
 
@@ -453,7 +459,7 @@ async function main() {
   }
 
   // Last resort for infrastructure: shared repair tools, never unapproved server access.
-  const stuck = failing.filter(c => c.id !== 'agent-reply' && !byId[c.id].noAutoFix && s.fails[c.id] >= 6 && (s.fixes[c.id] || []).length >= 2);
+  const stuck = failing.filter(c => !NOT_A_RESTART.includes(c.id) && !byId[c.id].noAutoFix && s.fails[c.id] >= 6 && (s.fixes[c.id] || []).length >= 2);
   if (stuck.length && now - (s.lastAiRepair || 0) > AI_REPAIR_GAP && !DRY) {
     const msg = `Automatic check: Wizard has been broken for ${s.fails[stuck[0].id]} minutes and restarts did not fix it.\n` +
       stuck.map(c => `- ${c.label}: ${c.detail}`).join('\n') + `\nFind the cause, fix it, verify with the status script, and explain what you did in plain words.`;

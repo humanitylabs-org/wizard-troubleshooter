@@ -113,7 +113,9 @@ test('routing: default order is Claude, ChatGPT, Tinfoil; a picked engine is the
     assert.deepEqual(only.order, ['tinfoil']);
     assert.deepEqual(only.events.filter(e => e.type === 'signin').map(e => e.engine), ['tinfoil']);
     const eng = await (await fetch(`http://127.0.0.1:${port}/troubleshoot/api/engines`)).json();
-    assert.deepEqual(eng.engines.map(e => [e.engine, e.app, e.open]), [['claude', 'Claude app', '/wizard-claude/'], ['chatgpt', 'ChatGPT app', '/wizard-chatgpt/'], ['tinfoil', 'Tinfoil app', '/wizard-tinfoil/']]);
+    // #62: this box's Claude login folder is the server's own (no Claude app bound to it), so it is named that way
+    // and has no Claude app button.
+    assert.deepEqual(eng.engines.map(e => [e.engine, e.app, e.open]), [['claude', 'Claude (server sign-in)', ''], ['chatgpt', 'ChatGPT app', '/wizard-chatgpt/'], ['tinfoil', 'Tinfoil app', '/wizard-tinfoil/']]);
   } finally { child.kill(); }
 });
 
@@ -123,11 +125,11 @@ test('missing sign-ins: each engine says which app to open, then the chat ends h
   try {
     const c = await chat(port, 'My Wizard is down', 'auto');
     const s = c.events.filter(e => e.type === 'signin');
-    assert.match(s[0].text, /Claude app has no sign-in.*Open the Claude app/);
+    assert.match(s[0].text, /Claude has no server sign-in\. Open a terminal on the server and run `claude`, then `\/login`\./); // #62
     assert.match(s[0].text, /Trying ChatGPT instead/);
     assert.match(s[1].text, /ChatGPT app has no sign-in/);
     assert.match(s[2].text, /Tinfoil app is not answering/);
-    assert.deepEqual(s.map(e => e.open), ['/wizard-claude/', '/wizard-chatgpt/', '/wizard-tinfoil/']);
+    assert.deepEqual(s.map(e => e.open), ['', '/wizard-chatgpt/', '/wizard-tinfoil/']);
     assert.match(c.events.find(e => e.type === 'note').text, /No AI could answer/);
     assert.equal(c.events.at(-1).type, 'end');
   } finally { child.kill(); }
@@ -431,7 +433,10 @@ test('connection app links follow App Manager\'s registry: own HTTPS port, same-
   ] }));
   const claude = fakeClaude(state);
   fs.rmSync(path.join(claude.CLAUDE_CONFIG_DIR, '.credentials.json'));
-  const { port, child } = await startServer(hostEnv(state, { ...claude, WIZARD_APPS_FILE: path.join(state, 'apps.json') }));
+  // App Manager bound the Claude app to this login folder (`wam alongside`), so the Claude app's Sign in renews it (#62).
+  const over = path.join(state, 'runtipi/user-config/wizardapps/wizard-claude'); fs.mkdirSync(over, { recursive: true });
+  fs.writeFileSync(path.join(over, 'docker-compose.yml'), `x-wizard-claude-login:\n  folder: ${claude.CLAUDE_CONFIG_DIR}\n`);
+  const { port, child } = await startServer(hostEnv(state, { ...claude, WIZARD_APPS_FILE: path.join(state, 'apps.json'), RUNTIPI_ROOT: path.join(state, 'runtipi') }));
   try {
     const by = Object.fromEntries((await engines(port)).engines.map(a => [a.engine, a]));
     assert.equal(by.claude.open, 'https://box.example.ts.net:8799/', 'the app\'s real address, not a /wizard-claude/ path this box does not serve');
