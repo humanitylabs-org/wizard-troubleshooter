@@ -297,7 +297,10 @@ try { if (window.parent !== window) window.parent.postMessage({ type: 'wizard-tr
     $('reconnect').hidden = !focused;
     if (!focused) return;
     const name = NAMES[diagnosed.engine];
-    const html = recoverySent
+    // #62: the server's own Claude sign-in is renewed on the server; the Claude app's sign-in is a separate one.
+    const html = diagnosed.server && !recoverySent
+      ? `<h2>${esc(name)}'s server sign-in has expired</h2><p>Your agent answers every chat with the ${esc(name)} sign-in on your server, so no chat gets a reply until it is renewed there. The ${esc(name)} app has its own sign-in; signing in there won't fix this one.</p><ol><li>Open a terminal on the server.</li><li>Run <code>claude</code>, then type <code>/login</code> and follow the steps.</li><li>Come back here. Your waiting message sends on its own.</li></ol><button type="button" class="ts-something" data-other-problem>Something else is wrong</button>`
+      : recoverySent
       ? `<h2>${esc(name)} is signed in again. Your message was sent.</h2><button type="button" class="ts-act" data-back-chat>Back to chat</button>`
       : `<h2>${esc(name)}'s sign-in has expired</h2><p>Your Wizard can't send messages to ${esc(name)} until you sign in again.</p><ol><li>Tap Sign in to ${esc(name)}.</li><li>Sign in on the page that opens.</li><li>Come back here. Your waiting message sends on its own.</li></ol>${appLink(diagnosed, `Sign in to ${name}`, 'ts-act')}<button type="button" class="ts-something" data-other-problem>Something else is wrong</button>`;
     if (html !== recoveryMarkup) { recoveryMarkup = html; $('reconnect').innerHTML = html; }
@@ -334,13 +337,13 @@ try { if (window.parent !== window) window.parent.postMessage({ type: 'wizard-tr
     if (bad.length) $('alertText').textContent = `I can already see a problem with ${bad[0].label.replace(/^Your /, 'your ')}: ${String(bad[0].detail || '').replace(/\.$/, '').toLowerCase()}. Tap below and I'll fix it.`;
     // An outage that keeps coming back, named by the guardian (#47): one plain status until its fix is live.
     if (s.knownCause) $('alertText').textContent = s.knownCause.text;
-    $('checks').innerHTML = s.checks.map(c => `<div class="ts-row"><span class="ts-dot ${c.skipped ? '' : c.ok ? (c.slow ? 'ts-warn' : 'ts-ok') : 'ts-bad'}"></span><div class="ts-m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="ts-d">${esc(c.detail)}</div>`}</div></div>`).join('');
+    $('checks').innerHTML = s.checks.map(c => `<div class="ts-row"><span class="ts-dot ${c.skipped ? '' : c.ok ? (c.slow ? 'ts-warn' : 'ts-ok') : 'ts-bad'}"></span><div class="ts-m">${esc(c.label)}${c.ok && !c.slow ? '' : `<div class="ts-d">${md(c.detail)}</div>`}</div></div>`).join('');
     // A failing check that names its fix puts that fix first, marked, even while the link itself looks healthy.
     const wanted = new Set(bad.map(c => c.fix).filter(Boolean));
     $('fixes').innerHTML = Object.entries(actions).filter(([k, a]) => !a.onlyWhenNeeded || wanted.has(k)).sort(([a], [b]) => wanted.has(b) - wanted.has(a)).map(([k, a]) => `<button class="ts-act${wanted.has(k) ? ' ts-wanted' : ''}" type="button" data-act="${esc(k)}">${esc(wanted.has(k) ? `${a.label} (recommended)` : a.label)}</button>`).join('');
     if (s.accounts) {
       setEngines(s.accounts, s.engine);
-      $('acct').innerHTML = s.accounts.map(a => `<div class="ts-row"><span class="ts-dot ${a.ok ? 'ts-ok' : 'ts-bad'}"></span><div class="ts-m">${esc(a.app)}<div class="ts-d">${esc(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok || !a.open ? '' : appLink(a, a.installed === false ? 'Get app' : 'Sign in', '')}</div>`).join('');
+      $('acct').innerHTML = s.accounts.map(a => `<div class="ts-row"><span class="ts-dot ${a.ok ? 'ts-ok' : 'ts-bad'}"></span><div class="ts-m">${esc(a.app)}<div class="ts-d">${md(a.ok ? a.detail : a.detail || a.reason)}</div></div>${a.ok || !a.open ? '' : appLink(a, a.installed === false ? 'Get app' : 'Sign in', '')}</div>`).join('');
     }
     paintReconnect(s.reconnect);
     if (s.repair && !current) openConv(s.repair.convId);
@@ -406,7 +409,7 @@ try { if (window.parent !== window) window.parent.postMessage({ type: 'wizard-tr
     if (ev.type === 'signin') {
       const d = document.createElement('div'); d.className = 'ts-signin';
       const offer = ev.offer && NAMES[ev.offer] ? `<button class="ts-act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button>` : '';
-      d.innerHTML = `<span>${esc(ev.text)}</span><div class="ts-acts">${ev.open ? appLink(ev, ev.installed === false ? `Get the ${ev.app}` : `Open ${ev.app}`, 'ts-act') : ''}${offer}</div>`;
+      d.innerHTML = `<span>${md(ev.text)}</span><div class="ts-acts">${ev.open ? appLink(ev, ev.installed === false ? `Get the ${ev.app}` : `Open ${ev.app}`, 'ts-act') : ''}${offer}</div>`;
       log.insertBefore(d, log.querySelector('.ts-working')); return toBottom();
     }
     if (ev.type === 'tool' || ev.type === 'status') {
@@ -418,7 +421,7 @@ try { if (window.parent !== window) window.parent.postMessage({ type: 'wizard-tr
     if (ev.type === 'text') { d.className = 'ts-msg ts-' + ev.role; d.innerHTML = ev.role === 'agent' ? `<div class="ts-who">${esc(NAMES[ev.engine] || 'Claude')}${ev.modelLabel ? ' · ' + esc(ev.modelLabel) : ''}</div>${md(ev.text)}` : (ev.images?.length ? `<div class="ts-pics">${ev.images.map(i => ev.local ? `<img alt="Screenshot" src="${esc(i.src)}">` : `<img alt="Screenshot" src="/troubleshoot/api/attachment/${esc(current)}/${esc(i.id)}">`).join('')}</div>` : '') + esc(ev.text.replace(/\n\n\[Automatic check right now:[^\]]*\]$/, '')); }
     else if (ev.type === 'note') {
       d.className = 'ts-note'; d.textContent = ev.text;
-      if (ev.offer && NAMES[ev.offer]) { d.className = 'ts-signin'; d.innerHTML = `<span>${esc(ev.text)}</span><div class="ts-acts"><button class="ts-act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button></div>`; }
+      if (ev.offer && NAMES[ev.offer]) { d.className = 'ts-signin'; d.innerHTML = `<span>${md(ev.text)}</span><div class="ts-acts"><button class="ts-act" type="button" data-retry="${esc(ev.offer)}">Ask ${esc(NAMES[ev.offer])} instead</button></div>`; }
     }
     else return;
     log.insertBefore(d, log.querySelector('.ts-working')); toBottom();

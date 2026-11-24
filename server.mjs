@@ -12,7 +12,8 @@ import { startRepair, loadConv, listConvs, busy, stopRepair, bridgeToken, bridge
 import { plansOn, planState, listPlans, approvePlan, dismissPlan, undoPlan } from './lib/repair-plan.mjs';
 import { toolDefs } from './lib/toolloop.mjs';
 import { listing as switchListing, setSwitch, switchOn } from './lib/switches.mjs';
-import { allSignins, engineOrder, ENGINES, selectedEngine, saveEngine, appLink, META } from './lib/providers.mjs';
+import { allSignins, engineOrder, ENGINES, selectedEngine, saveEngine, appLink, META, claudePlace } from './lib/providers.mjs';
+import { TERMINAL_STEPS } from './lib/agent-signin.mjs';
 
 function guardianToken() {
   const f = path.join(CONFIG.stateDir, 'guardian.token');
@@ -260,7 +261,13 @@ const handler = async (req, res) => {
       if (url.searchParams.get('accounts') === '1') { const accounts = await allSignins(); extra = { accounts, order: engineOrder('auto'), engine: selectedEngine(accounts) }; }
       const expired = s.checks.find(c => !c.ok && c.state === 'expired');
       const eng = expired && ENGINES.find(e => META[e].name === expired.provider || expired.id === `reply-${e}`);
-      const reconnect = eng ? { engine: eng, ...META[eng], ...appLink(eng), state: 'expired' } : null;
+      // #62: the main agent's Claude login is often the server's own (`claude` → `/login` on the server renews it), not
+      // the Claude app's. Never send the owner to the Claude app for that one.
+      const agentLogin = s.checks.find(c => c.id === 'agent-signin');
+      const onServer = eng === 'claude' && (['agent-reply', 'agent-signin'].includes(expired.id) ? agentLogin?.login === 'server' : claudePlace().login === 'server');
+      const reconnect = !eng ? null : onServer
+        ? { engine: eng, ...META[eng], app: 'Claude (server sign-in)', open: '', installed: null, server: true, howToFix: TERMINAL_STEPS, state: 'expired' }
+        : { engine: eng, ...META[eng], ...appLink(eng), state: 'expired' };
       return send(res, 200, { ...s, ...extra, reconnect, direct: DIRECT_URL ? `${DIRECT_URL}${PREFIX}/` : null, release: await lastAgentRelease(), repair: busy() || null, knownCause: knownCause(), actions: Object.fromEntries(Object.entries(ACTIONS).map(([k, a]) => [k, { label: a.label, warn: a.warn || '', ...(a.onlyWhenNeeded ? { onlyWhenNeeded: true } : {}) }])) });
     }
     if (req.method === 'GET' && p === '/api/switches') return send(res, 200, switchListing());
