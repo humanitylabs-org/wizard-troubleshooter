@@ -65,8 +65,8 @@ all be down and it still works.
   coming back (#46): it is logged as such, the guardian still restarts it so Wizard stays usable, but never reports it
   as fixed ("answering again for now ... isn't fixed yet"), and asks the repair chat once for the cause (event-loop
   stalls, one device resending a request, a fresh update).
-  **Switch `recurring-cause` (#47, off by default; `GET/POST /troubleshoot/api/switches`, `wizard.app-switches/1`,
-  Tracker id `troubleshoot:recurring-cause`; state in `<state>/switches.json`).** With it on, a repeat outage also gets
+  **Outages that keep coming back are named and contained (#47, on for everyone; its `recurring-cause` switch was
+  removed and a stored value for it is cleared).** A repeat outage also gets
   its cause named from the box's own evidence (`lib/outage-cause.mjs`): the Agent Service's `[event-loop]` journal
   lines (`GUARDIAN_EVENT_LOOP_LOG` reads a file instead) and, if the box keeps one, the gateway's JSON access log
   (`GUARDIAN_ACCESS_LOG`, Caddy `format json`): one device sending at least 1 request a second and most of one route's

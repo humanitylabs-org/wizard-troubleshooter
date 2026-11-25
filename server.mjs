@@ -11,7 +11,7 @@ import { CONFIG, runChecks, ACTIONS, doAction, logIncident, readIncidents, lastA
 import { startRepair, loadConv, listConvs, busy, stopRepair, bridgeToken, bridgeRequest, decideApproval, attachmentFile } from './lib/repair.mjs';
 import { plansOn, planState, listPlans, approvePlan, dismissPlan, undoPlan } from './lib/repair-plan.mjs';
 import { toolDefs } from './lib/toolloop.mjs';
-import { listing as switchListing, setSwitch, switchOn } from './lib/switches.mjs';
+import { listing as switchListing, setSwitch } from './lib/switches.mjs';
 import { allSignins, engineOrder, ENGINES, selectedEngine, saveEngine, appLink, META, claudePlace } from './lib/providers.mjs';
 import { TERMINAL_STEPS } from './lib/agent-signin.mjs';
 
@@ -80,10 +80,9 @@ const PAGE = path.join(WEB, 'index.html');
 const SHELL_WEB = process.env.SHELL_WEB_DIR || [path.join(process.env.HOME || '', '.local/share/wizard-ux/current/web'), path.join(process.env.HOME || '', 'apps/wizard-os-home/web')].find(d => { try { return fs.statSync(path.join(d, 'kit')).isDirectory(); } catch { return false; } }) || '';
 const KIT = { 'wizard-tokens.css': ['kit/wizard-tokens.css', 'text/css'], 'wizard-ui.css': ['kit/wizard-ui.css', 'text/css'], 'app-client.js': ['core/app-client.js', 'text/javascript'] };
 const DEV_OPEN = process.env.TROUBLESHOOT_DEV_NO_AUTH === '1'; // local tests only
-// #47 (switch recurring-cause): the guardian's one plain status about an outage that keeps coming back, until its fix
+// #47: the guardian's one plain status about an outage that keeps coming back, until its fix
 // is live. Only the text and the filed issue reach the page.
 function knownCause() {
-  if (!switchOn('recurring-cause')) return null;
   try { const k = JSON.parse(fs.readFileSync(path.join(CONFIG.stateDir, 'guardian.json'), 'utf8')).knownCause; return k?.text ? { text: String(k.text), since: k.since, issue: k.issue || '', url: k.url || '' } : null; } catch { return null; }
 }
 // Where the real peer address comes from. caddy: the private gateway sets X-Private-Peer from the connection.
