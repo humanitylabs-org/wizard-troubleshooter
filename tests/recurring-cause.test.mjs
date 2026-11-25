@@ -1,4 +1,4 @@
-// #47 (switch recurring-cause): an outage that keeps coming back gets its cause named from the box's own evidence,
+// #47 (on for everyone): an outage that keeps coming back gets its cause named from the box's own evidence,
 // is contained inside Wizard, and one hotfix is filed, instead of restart after restart. Fixture: the 13 Nov 2026
 // incident (a phone sending PUT /wizard/thread-seen about 8 times a second; outages 03:25, 03:58, 05:25, 06:03 UTC).
 import test from 'node:test';
@@ -9,6 +9,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 process.env.TROUBLESHOOT_STATE ||= fs.mkdtempSync((process.env.TMPDIR || os.tmpdir()) + '/rc-');
+// A box that had flipped the retired switch keeps another switch value but loses this one.
+fs.writeFileSync(path.join(process.env.TROUBLESHOOT_STATE, 'switches.json'), JSON.stringify({ 'recurring-cause': false, other: true }));
 const C = await import('../lib/outage-cause.mjs');
 const SW = await import('../lib/switches.mjs');
 const MIN = 60e3;
@@ -71,28 +73,24 @@ test('the Agent Service limit counts only when it covers the looping route', () 
   assert.equal(C.limitActive(null, cause), false);
 });
 
-test('the switch is off by default, linked to #47, and flips on the box', () => {
+test('the recurring-cause switch is gone: no switch listed, unknown to POST, its stored value cleared', () => {
   const l = SW.listing();
   assert.equal(l.contract, 'wizard.app-switches/1');
-  const sw = l.switches.find(s => s.id === 'recurring-cause');
-  assert.equal(sw.on, false);
-  assert.equal(sw.default, false);
-  assert.deepEqual(sw.issues, ['humanitylabs-org/wizard-troubleshooter#47']);
-  assert.equal(SW.setSwitch('recurring-cause', true).switches[0].on, true);
-  assert.equal(SW.switchOn('recurring-cause'), true);
-  SW.setSwitch('recurring-cause', false);
-  assert.throws(() => SW.setSwitch('nope', true));
+  assert.deepEqual(l.switches, []);
+  assert.throws(() => SW.setSwitch('recurring-cause', true));
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(process.env.TROUBLESHOOT_STATE, 'switches.json'), 'utf8')), { other: true });
 });
 
 // ---- the fixture storm, through the real guardian ----
 const listen = handler => new Promise(r => { const s = http.createServer(handler); s.listen(0, '127.0.0.1', () => r(s)); });
 async function closedPort() { const s = await listen(() => {}); const { port } = s.address(); await new Promise(r => s.close(r)); return port; }
-async function storm(t, { on = true, dry = false } = {}) {
+async function storm(t, { dry = false } = {}) {
   const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'rc-storm-'));
   const now = Date.now();
   fs.writeFileSync(path.join(dir, 'access.log'), accessLog(now));
   fs.writeFileSync(path.join(dir, 'event-loop.log'), LOOP);
-  if (on) fs.writeFileSync(path.join(dir, 'switches.json'), JSON.stringify({ 'recurring-cause': true }));
+  // A box that had switched it off: the old stored value no longer turns it off.
+  fs.writeFileSync(path.join(dir, 'switches.json'), JSON.stringify({ 'recurring-cause': false }));
   // The Agent Service froze again (503), and its per-device limit reports the storm (wizard-agent-service#513).
   const agent = await listen((req, res) => { res.writeHead(503, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ status: 'degraded', client_storm: [{ device: 'd1', route: '/wizard/thread-seen', rate: 8, body_bytes: 117000 }] })); });
   const filed = [];
@@ -124,9 +122,10 @@ async function storm(t, { on = true, dry = false } = {}) {
   return { minute, incidents, filed, base, dir };
 }
 
-test('fixture storm, switch on: one incident, a containment action and one filed bug, not repeated restarts', async t => {
-  const { minute, incidents, filed, base } = await storm(t);
+test('fixture storm: one incident, a containment action and one filed bug, not repeated restarts', async t => {
+  const { minute, incidents, filed, base, dir } = await storm(t);
   const first = await minute(base);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'switches.json'), 'utf8')), {}, 'the stored switch value is cleared');
   // The storm comes back after the next recovery: same cause, so no second bug.
   const fails = { 'agent-service': 5 };
   const again = await minute({ ...first.saved, outage: null, fails, outageStarts: { 'agent-service': [Date.now() - 20 * MIN, ...first.saved.outageStarts['agent-service']] } });
@@ -146,15 +145,6 @@ test('fixture storm, switch on: one incident, a containment action and one filed
   assert.equal(again.saved.knownCause.since, first.saved.knownCause.since, 'the same cause keeps its one status');
 });
 
-test('fixture storm, switch off (the default): nothing new happens', async t => {
-  const { minute, incidents, filed, base } = await storm(t, { on: false, dry: true });
-  const { out, saved } = await minute(base);
-  assert.equal(filed.length, 0);
-  assert.equal(incidents().filter(i => i.kind === 'cause-found').length, 0);
-  assert.equal(saved.knownCause, undefined);
-  assert.match(out, /would restart:agent-service/, 'the restart path is unchanged');
-});
-
 test('fixture storm, report-only: says what it would do and files nothing', async t => {
   const { minute, filed, base } = await storm(t, { dry: true });
   const { out } = await minute(base);
@@ -164,7 +154,7 @@ test('fixture storm, report-only: says what it would do and files nothing', asyn
 });
 
 // ---- the switch endpoint (wizard.app-switches/1) and the page's one status ----
-test('GET/POST /troubleshoot/api/switches flips the switch; the page shows the named cause only while it is on', async t => {
+test('GET/POST /troubleshoot/api/switches serves an empty list; the page shows the named cause', async t => {
   const state = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'rc-http-'));
   const base = { ...process.env };
   for (const k of Object.keys(base)) if (/^(TROUBLESHOOT_|GUARDIAN_|WAS_|TS_|TAILSCALE_|GATEWAY_|AUTH_|SHELL_|AGENT_|HERMES_|CLAUDE_|CHATGPT_|TINFOIL_|WIZARD_|DOCKER_)/.test(k)) delete base[k];
@@ -186,12 +176,9 @@ test('GET/POST /troubleshoot/api/switches flips the switch; the page shows the n
   let [code, l] = await call('GET', 'switches');
   assert.equal(code, 200);
   assert.equal(l.contract, 'wizard.app-switches/1');
-  assert.deepEqual(l.switches.map(s => [s.id, s.on]), [['recurring-cause', false]]);
-  assert.equal((await call('GET', 'status'))[1].knownCause, null, 'switch off: no status');
+  assert.deepEqual(l.switches, []);
   assert.equal((await call('POST', 'switches', { id: 'recurring-cause', on: true }))[0], 403, 'a flip needs X-Wizard-Switch: 1 (or the page header)');
-  [code, l] = await call('POST', 'switches', { id: 'recurring-cause', on: true }, { 'X-Wizard-Switch': '1' });
-  assert.equal(code, 200);
-  assert.equal(l.switches[0].on, true);
+  assert.equal((await call('POST', 'switches', { id: 'recurring-cause', on: false }, { 'X-Wizard-Switch': '1' }))[0], 400, 'the retired switch is unknown');
   const st = (await call('GET', 'status'))[1];
   assert.match(st.knownCause.text, /^A phone is resending one request in a loop/);
   assert.equal(st.knownCause.issue, 'humanitylabs-org/wizard-ux#901');

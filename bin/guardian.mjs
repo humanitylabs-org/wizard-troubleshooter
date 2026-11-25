@@ -10,7 +10,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import { CONFIG, CHECKS, ACTIONS, runChecks, doAction, deployInProgress, lastAgentRelease, logIncident, run, hermesRestartState } from '../lib/checks.mjs';
-import { switchOn } from '../lib/switches.mjs';
+import '../lib/switches.mjs'; // clears stored values of retired switches
 import { gatherEvidence, nameCause, causeKey, causeText, limitActive, agentHealth, hotfixIssue, fileHotfix, fixLive } from '../lib/outage-cause.mjs';
 
 const STATE = path.join(CONFIG.stateDir, 'guardian.json');
@@ -200,7 +200,7 @@ async function pauseRestarts(s, c, hold, now, actionsTaken) {
   await postThread(`guardian-pause-${c.id}-${now}`, `**${text}** Details: /troubleshoot/`);
 }
 
-// Switch `recurring-cause` (#47): a repeat outage gets its cause named from the box's own evidence, contained (the
+// #47: a repeat outage gets its cause named from the box's own evidence, contained (the
 // Agent Service's per-device limit, or undoing a fresh update), one hotfix filed through the Tracker, and one plain
 // status for the owner (s.knownCause, shown on the Troubleshooter page) until that fix is live. Returns the check ids
 // the containment covers, so the restart loop leaves them alone this run.
@@ -269,7 +269,7 @@ async function containRecurring(s, recurring, now) {
 async function knownCauseDone(s, now) {
   const k = s.knownCause;
   if (!k) return;
-  if (!switchOn('recurring-cause') || now - k.since >= KNOWN_CAUSE_MAX) { s.knownCause = null; return; }
+  if (now - k.since >= KNOWN_CAUSE_MAX) { s.knownCause = null; return; }
   if (!k.issue || now - (k.checkedAt || 0) < FIX_CHECK_GAP || DRY) return;
   k.checkedAt = now;
   if (await fixLive(k.issue)) {
@@ -330,8 +330,8 @@ async function main() {
       text: repeat ? `This keeps coming back (the ${ordinal(repeat + 1)} time in 2 hours): ${what}. A restart only gets Wizard going for a while.` : what });
   }
 
-  // #47 (switch recurring-cause): name, contain and file the cause of a repeat outage, before any restart.
-  const contained = switchOn('recurring-cause') && s.outage?.repeat
+  // #47: name, contain and file the cause of a repeat outage, before any restart.
+  const contained = s.outage?.repeat
     ? await containRecurring(s, core.filter(c => !NOT_A_RESTART.includes(c.id) && (s.outage.again || []).includes(c.id)), now) : new Set();
   await knownCauseDone(s, now);
 
