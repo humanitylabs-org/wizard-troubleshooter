@@ -103,6 +103,39 @@ function peerAddress(req) {
   return typeof ip === 'string' ? ip : null;
 }
 
+// The Mac window (Wizard for Mac, try-wizard's guest local proxy). The window has no tailnet address: the proxy is the
+// owner's own Mac, reached over a root-only socket, and it names itself `X-Forwarded-For: wizard-mac-window` with the
+// node owner's `Tailscale-User-Login` (local-proxy-owner.inc). Any loopback program could send those headers, so the
+// claim counts only from a root-owned loopback socket (the proxy's nginx runs as root; the agent, apps and this user
+// can't open one), the same rule as the App Manager's Store listener (store_install.peer_uid). Without it the
+// Troubleshooter answered the Mac window "Open this from one of your own devices", exactly when Wizard was down.
+const MAC_WINDOW_HOP = 'wizard-mac-window';
+const MAC_WINDOW_UID = +(process.env.TROUBLESHOOT_MAC_WINDOW_UID || 0); // tests only: the uid that counts as the proxy
+function loopbackPeerUid(req) {
+  const rp = req.socket.remotePort, lp = req.socket.localPort;
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress) || !rp || !lp) return null;
+  for (const f of ['/proc/net/tcp', '/proc/net/tcp6']) {
+    let rows; try { rows = fs.readFileSync(f, 'utf8').split('\n').slice(1); } catch { continue; }
+    for (const r of rows) {
+      const c = r.trim().split(/\s+/);
+      if (c.length < 8) continue;
+      if (parseInt(c[1].split(':').pop(), 16) === rp && parseInt(c[2].split(':').pop(), 16) === lp) return +c[7];
+    }
+  }
+  return null;
+}
+function macWindow(req) {
+  return req.headers['x-forwarded-for'] === MAC_WINDOW_HOP && loopbackPeerUid(req) === MAC_WINDOW_UID;
+}
+// The owner the window may act as: the configured owner list, else this node's own (human) tailnet login.
+function windowOwner(req) {
+  const login = req.headers['tailscale-user-login'];
+  if (typeof login !== 'string' || !/^[a-zA-Z0-9._+@-]{1,254}$/.test(login)) return null;
+  const l = login.toLowerCase();
+  if (OWNERS.size) return OWNERS.has(l) ? login : null;
+  return selfLogin && selfLogin.toLowerCase() === l ? login : null;
+}
+
 // Repair plans run a full shell, so approving one needs more than the loopback headers every local process could
 // forge: the connection must come from the HTTPS front itself (Caddy or tailscaled, found through ss and
 // /proc/<pid>/exe), and an owner list must be configured. Other uids' sockets show no process and are refused.
@@ -124,17 +157,29 @@ async function frontProcess(req) {
 // This server's own tailnet addresses: a request that comes back in through the front from the box itself (for
 // example an agent curling the Wizard address) carries the node owner's login and must never approve a repair.
 let selfIPs = new Set();
+let selfLogin = ''; // the node owner's login (Self.UserID in tailscaled's status); the Mac window's owner when no list is set
+// Resolves once tailscaled answered (or failed), so the Mac window's first request after a restart can wait for
+// the node login instead of being refused once.
 function loadSelfIPs() {
-  const req = http.get({ socketPath: WHOIS_SOCKET, path: '/localapi/v0/status', headers: { Host: 'local-tailscaled.sock' }, timeout: 4000 }, res => {
-    let body = ''; res.on('data', d => { if (body.length < 4 << 20) body += d; });
-    res.on('end', () => { try { const ips = JSON.parse(body)?.Self?.TailscaleIPs; if (Array.isArray(ips) && ips.length) selfIPs = new Set(ips.map(String)); } catch {} });
+  return new Promise(resolve => {
+    const req = http.get({ socketPath: WHOIS_SOCKET, path: '/localapi/v0/status', headers: { Host: 'local-tailscaled.sock' }, timeout: 4000 }, res => {
+      let body = ''; res.on('data', d => { if (body.length < 4 << 20) body += d; });
+      res.on('end', () => { try {
+        const st = JSON.parse(body), ips = st?.Self?.TailscaleIPs;
+        if (Array.isArray(ips) && ips.length) selfIPs = new Set(ips.map(String));
+        const login = st?.User?.[st?.Self?.UserID]?.LoginName;
+        if (typeof login === 'string' && !st?.Self?.Tags?.length) selfLogin = login;
+      } catch {} resolve(); });
+      res.on('error', () => resolve());
+    });
+    req.on('timeout', () => req.destroy()); req.on('error', () => resolve());
   });
-  req.on('timeout', () => req.destroy()); req.on('error', () => {});
 }
 async function planGate(who, req) {
   if (DEV_OPEN) return '';
   if (!OWNERS.size) return 'Repair plans need TROUBLESHOOT_OWNERS set to the owner login on this server.';
   if (!who || !OWNERS.has(String(who).toLowerCase())) return 'Only the owner can approve repairs.';
+  if (macWindow(req)) return ''; // the owner's own Mac through its root-only window door (see macWindow)
   const ip = peerAddress(req);
   if (!selfIPs.size) loadSelfIPs();
   if (!ip || selfIPs.has(ip) || !selfIPs.size) return 'Approve repairs from your own device, not from this server.';
@@ -221,9 +266,12 @@ const handler = async (req, res) => {
     }
     if (!DEV_OPEN) {
       const ip = peerAddress(req);
-      who = ip && validPeer(ip) ? await whois(ip) : null;
-      const claimed = req.headers['tailscale-user-login'];
-      if (who && typeof claimed === 'string' && claimed.toLowerCase() !== who.toLowerCase()) who = null; // Serve's header must agree with whois
+      if (macWindow(req)) { if (!OWNERS.size && !selfLogin) await loadSelfIPs(); who = windowOwner(req); }
+      else {
+        who = ip && validPeer(ip) ? await whois(ip) : null;
+        const claimed = req.headers['tailscale-user-login'];
+        if (who && typeof claimed === 'string' && claimed.toLowerCase() !== who.toLowerCase()) who = null; // Serve's header must agree with whois
+      }
       if (who && OWNERS.size && !OWNERS.has(who.toLowerCase())) { logIncident({ kind: 'refused', by: who }); who = null; }
       if (!who) return send(res, 403, p.startsWith('/api/') ? { error: 'Open this from one of your own devices on your private network.' } : '<!doctype html><meta name=viewport content="width=device-width"><body style="background:#0b0d12;color:#e8eaf0;font:16px system-ui;padding:24px">Open this from one of your own devices on your private network.</body>');
     }

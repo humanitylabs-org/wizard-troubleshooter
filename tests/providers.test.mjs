@@ -273,6 +273,48 @@ test('owner gate (tailscale-serve): whois-confirmed owner only; spoofed, foreign
   } finally { child.kill(); ts.close(); }
 });
 
+// The Mac window: try-wizard's root-only window door names itself in X-Forwarded-For and carries the node owner's
+// login. Only a loopback socket owned by the proxy's uid (root on a box; this test's own uid here) may claim it.
+test('owner gate: the Mac window door opens the page for the owner; forged or foreign claims are refused', async () => {
+  const state = tmp();
+  const env = { ...hostEnv(state), TROUBLESHOOT_DEV_NO_AUTH: '', TROUBLESHOOT_FRONT: 'tailscale-serve', TS_WHOIS_SOCKET: path.join(state, 'none.sock'),
+    TROUBLESHOOT_OWNERS: 'owner@example.com', WIZARD_PRIVATE_ORIGINS: 'https://box.example.ts.net:8444' };
+  const get = (port, h) => fetch(`http://127.0.0.1:${port}/troubleshoot/api/status`, { headers: h }).then(r => r.status);
+  const win = { 'X-Forwarded-For': 'wizard-mac-window', 'Tailscale-User-Login': 'owner@example.com' };
+  const proxy = await startServer({ ...env, TROUBLESHOOT_MAC_WINDOW_UID: String(process.getuid()) });
+  try {
+    assert.equal(await get(proxy.port, win), 200, 'the window door as the owner');
+    assert.equal(await get(proxy.port, { ...win, 'Tailscale-User-Login': 'guest@example.com' }), 403, 'a login not on the owner list');
+    assert.equal(await get(proxy.port, { 'X-Forwarded-For': 'wizard-mac-window' }), 403, 'no login');
+    assert.equal(await get(proxy.port, { 'Tailscale-User-Login': 'owner@example.com' }), 403, 'login without the door');
+    const post = origin => fetch(`http://127.0.0.1:${proxy.port}/troubleshoot/api/repair`, { method: 'POST', headers: { ...H, ...win, Origin: origin }, body: JSON.stringify({ message: 'x' }) }).then(r => r.status);
+    assert.equal(await post('https://evil.example'), 403, 'cross-site POST from the window');
+    // Repair approvals: the window passes the plan gate (an unknown plan is then just not found, never "refused").
+    const approve = await fetch(`http://127.0.0.1:${proxy.port}/troubleshoot/api/plan/0123456789abcdef/approve`, { method: 'POST', headers: { ...H, ...win, Origin: 'https://box.example.ts.net:8444' }, body: JSON.stringify({ digest: 'x' }) });
+    assert.notEqual(approve.status, 403, 'the owner may approve a repair plan from the window: ' + await approve.text());
+  } finally { proxy.child.kill(); }
+  // Default: only root's socket counts. A same-headers request from an ordinary program (this test, not root) is refused.
+  const other = await startServer(env);
+  try { assert.equal(await get(other.port, win), process.getuid() === 0 ? 200 : 403, 'the door claimed from a non-root socket'); }
+  finally { other.child.kill(); }
+  // No owner list: the window's login must be this node's own (untagged) tailnet login from tailscaled's status,
+  // read on the first window request after a start (no refused first load).
+  const sock = path.join(state, 'status.sock');
+  let tags = [];
+  const ts = http.createServer((req, res) => res.end(JSON.stringify({ Self: { UserID: 7, TailscaleIPs: ['100.70.0.9'], Tags: tags }, User: { 7: { ID: 7, LoginName: 'owner@example.com' } } })));
+  await new Promise(r => ts.listen(sock, r));
+  const noList = { ...env, TROUBLESHOOT_OWNERS: '', TS_WHOIS_SOCKET: sock, TROUBLESHOOT_MAC_WINDOW_UID: String(process.getuid()) };
+  const open = await startServer(noList);
+  try {
+    assert.equal(await get(open.port, win), 200, 'the node owner through the window, first request');
+    assert.equal(await get(open.port, { ...win, 'Tailscale-User-Login': 'guest@example.com' }), 403, 'another login through the window');
+  } finally { open.child.kill(); }
+  tags = ['tag:server'];
+  const tagged = await startServer(noList);
+  try { assert.equal(await get(tagged.port, win), 403, 'a tagged node has no human owner to name'); }
+  finally { tagged.child.kill(); ts.close(); }
+});
+
 test('tool loop: a provider error after the model already answered keeps the answer and says it stopped partway', async () => {
   const state = tmp();
   fs.writeFileSync(path.join(state, 'tf-token.json'), JSON.stringify({ token: TINFOIL_GATEWAY_SECRET }));
