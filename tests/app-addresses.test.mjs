@@ -178,3 +178,66 @@ test('`/` and a path another app is registered at are never learned as an app ad
   assert.equal(r.remembered.files, undefined, 'two apps on /files/: neither owns it');
   assert.equal(r.remembered.notes, undefined);
 });
+
+// #69 ask 3: `wam links` ran cleanly (exit 0, no errors) and left the address where it was. Retrying can't change it,
+// so the remembered address may be stale: say so, stop repairing, and never count it as an outage.
+function cleanNoopWam(b) {
+  const f = path.join(b.dir, 'wam-noop');
+  fs.writeFileSync(f, `#!${process.execPath}
+require('fs').appendFileSync(${JSON.stringify(path.join(b.dir, 'wam-calls'))}, process.argv.slice(2).join(' ') + '\\n');
+console.log(JSON.stringify({ links: [], errors: {} }));
+`);
+  fs.chmodSync(f, 0o755);
+  return f;
+}
+
+test('a clean `wam links` that leaves the address unchanged: the memory may be stale, no outage, no more repairs', () => {
+  const b = box({ apps: RAW, shared: RAW });
+  fs.mkdirSync(b.state, { recursive: true });
+  fs.writeFileSync(path.join(b.state, 'launchers.json'), JSON.stringify({ paths: { messenger: '/messenger/' } }));
+  const env = envFor(b, cleanNoopWam(b));
+  let p = spawnSync(process.execPath, ['bin/repair-app-addresses.mjs'], { cwd: ROOT, env, encoding: 'utf8' });
+  assert.equal(p.status, 0, p.stderr + p.stdout);
+  assert.match(p.stdout, /may be stale/);
+  const saved = JSON.parse(fs.readFileSync(path.join(b.state, 'launchers.json'), 'utf8'));
+  assert.deepEqual(saved.settled, { messenger: RAW });
+  const e = fs.readFileSync(path.join(b.state, 'incidents.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)).find(x => x.kind === 'app-addresses-stale');
+  assert.match(e.text, /remembered address may be stale for Messenger/);
+  assert.match(e.text, /not an outage/);
+  // The check now passes and says why; a second repair has nothing to do and does not run wam again.
+  const r = inspect(b.files, saved.paths, saved.settled);
+  assert.equal(r.ok, true, r.detail);
+  assert.match(r.detail, /may be stale for Messenger/);
+  p = spawnSync(process.execPath, ['bin/repair-app-addresses.mjs'], { cwd: ROOT, env, encoding: 'utf8' });
+  assert.equal(p.status, 0);
+  assert.equal(fs.readFileSync(path.join(b.dir, 'wam-calls'), 'utf8'), 'links --json\n');
+  // A different move later (another raw port) is a new problem again, and the old note is dropped.
+  const RAW2 = 'https://box.tail1234.ts.net:9999/';
+  for (const f of [b.files.apps, b.files.shared]) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replaceAll(RAW, RAW2));
+  const r2 = inspect(b.files, saved.paths, saved.settled);
+  assert.equal(r2.ok, false);
+  assert.deepEqual(r2.settled, {});
+});
+
+test('a `wam links` that changes nothing but reports errors is still a failed repair (not settled)', () => {
+  const b = box({ apps: RAW, shared: RAW });
+  const p = spawnSync(process.execPath, ['bin/repair-app-addresses.mjs'], { cwd: ROOT, env: envFor(b, fakeWam(b, false)), encoding: 'utf8' });
+  assert.equal(p.status, 1);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(b.state, 'launchers.json'), 'utf8')).settled, undefined);
+});
+
+test('the guardian stops repairing once a clean `wam links` left the address as it was', () => {
+  const b = box();
+  const env = envFor(b, cleanNoopWam(b), { GUARDIAN_ACT: '0', TS_SOCKET: path.join(b.dir, 'no.sock'), TAILSCALE_UNIT: '', GATEWAY_UNIT: '',
+    GATEWAY_MODE: 'tailscale-serve', GATEWAY_HOST: '127.0.0.1', GATEWAY_PORT: '1', AUTH_PORT: '', SHELL_PORT: '1', SHELL_CONTAINER: '',
+    AGENT_PORT: '1', AGENT_UNIT: '', AGENT_CONTAINER: '', HERMES_PORT: '1', HERMES_UNIT: '', WAS_RELEASE_ROOT: path.join(b.dir, 'none'),
+    WAS_DEPLOY_BIN: path.join(b.dir, 'none') });
+  const guard = () => spawnSync(process.execPath, ['bin/guardian.mjs'], { cwd: ROOT, env, encoding: 'utf8', timeout: 60000 });
+  let g = guard();                                                       // learns /messenger/ while healthy
+  assert.equal(g.status, 0, g.stderr);
+  for (const f of [b.files.links, b.files.apps, b.files.shared]) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replaceAll('"/messenger/"', JSON.stringify(RAW)));
+  guard(); g = guard();
+  assert.deepEqual(JSON.parse(g.stdout.trim().split('\n').pop()).actions, ['restart:app-addresses:true'], g.stdout + g.stderr);
+  for (let i = 0; i < 3; i++) { g = guard(); assert.equal(JSON.parse(g.stdout.trim().split('\n').pop()).actions.length, 0, g.stdout); }
+  assert.equal(fs.readFileSync(path.join(b.dir, 'wam-calls'), 'utf8'), 'links --json\n', 'one clean wam links, then no more repairs');
+});
