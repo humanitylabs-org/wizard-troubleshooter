@@ -77,10 +77,14 @@ all be down and it still works.
   `apps.json` loopback address; repo `wizard-ux` for a client loop, `wizard-agent-service` for an update,
   `GUARDIAN_HOTFIX_REPO` overrides) with the evidence, never a device address or token. The owner sees one plain status
   ("A phone is resending one request in a loop; Wizard is limiting it; a fix is being built") on the Troubleshooter
-  page and once in the Wizard thread, until the filed issue is merged (`ready-to-test`) or closed, or for a week.
+  page (not in the Wizard thread: nothing there for the owner to do, #68), until the filed issue is merged (`ready-to-test`) or closed, or for a week.
   Report-only mode says what it would do and files nothing. An Agent Service that answers its front page but is slow with its health check, or
   whose health says Hermes is slow to accept new messages (`queue.hermes_slow_to_accept`), is *busy*, not down:
-  never restarted and logged once per episode. It reports once into the owner's Wizard thread (`GUARDIAN_THREAD`). On by default, rate-limited (#62): it also sends one tiny real message through
+  never restarted and logged once per episode. The owner's Wizard thread (`GUARDIAN_THREAD`) hears only what he must act on (#68): a
+  sign-in to renew, replies stuck until he confirms a restart, or an outage restarts and the repair chat have not
+  cleared in 24 h (`GUARDIAN_OWNER_AFTER_H`), naming the one thing to do (approve the waiting repair plan, else open the
+  repair chat). One post per problem: once per outage, and not again within a day. Restarts, repairs, pauses, named
+  causes and recoveries go to the incident log and the page only. On by default, rate-limited (#62): it also sends one tiny real message through
   the main agent (`Your agent can reply`) at most once an hour while that works (`REPLY_CHECK_EVERY_MIN`, default
   60), again 5 min after a failure, and at once when Hermes has marked its sign-in failed since the last check (a
   chat just failed on it). A failed run (an error, however fast, an empty answer or anything but OK) is a failed
@@ -89,7 +93,7 @@ all be down and it still works.
   `TROUBLESHOOTER_REPLY_PROBES=0` turns it off; `=1` is the old every-10-min probe plus one to every connected repair
   engine (those stay opt-in). `GET /api/status?fresh=1` forces a new check. After two distinct failed main-agent
   replies, or a red `Your agent's AI sign-in`, it reports the outage and starts the independent backup repair chat.
-  A dead sign-in spends no restart budget. Recovery is logged and reported once. Keys and provider output are never
+  A dead sign-in spends no restart budget. Recovery is logged (not posted). Keys and provider output are never
   saved in the probe cache. #17 had switched all of this off (tokens all day); on 24 Nov 2026 that let no chat get a
   reply for six hours while every check was green.
 
@@ -126,6 +130,9 @@ and, in real Chromium, `tests/ui/sandboxed-frame-qa.cjs`.
   Wizard origin (`/messenger/`, `/files/`) must keep that path as its launcher address in both `apps.json` copies
   (`~/.wizard-os` and the Runtipi share the Agent Service reads). Paths seen in `links.json` or a healthy `apps.json`
   are remembered (`launchers.json` in the state dir), so a run that rewrote both files to a raw port is still caught.
+  Only a move off the Wizard origin (a raw port, another host, no address) is a problem: a different Wizard path in
+  the registry (a rename, Money → `/money/`) is the app's address now and is re-learned without an alert, and `/` or a
+  path another app is registered at is never remembered (#68/#69).
   After 2 failed minutes the fix (`bin/repair-app-addresses.mjs`) backs up the three files to
   `launcher-backups/<time>/` (last 20 kept), runs the box's `wam links --json`, reads the addresses back and logs an
   `app-addresses-repair` incident. It restarts nothing, so the guardian applies it even when report-only

@@ -123,7 +123,9 @@ test('guardian needs two distinct failed replies, reports once, starts backup re
     expire(); await tick(); assert.equal(repairs, 1, 'one backup repair per outage');
     const gs = JSON.parse(fs.readFileSync(path.join(state, 'guardian.json'))); assert.deepEqual(gs.fixes, {}, 'no restart budget spent on a dead sign-in');
     const reports = fs.readFileSync(path.join(state, 'reports'), 'utf8'); assert.equal((reports.match(/Wizard can't reply/g) || []).length, 1); assert.match(reports, /Claude sign-in expired/);
-    good = true; expire(); await tick(); const incidents = fs.readFileSync(path.join(state, 'incidents.jsonl'), 'utf8'); assert.match(incidents, /"kind":"outage"/); assert.match(incidents, /"kind":"recovered"/); assert.match(fs.readFileSync(path.join(state, 'reports'), 'utf8'), /Wizard is working again/);
+    good = true; expire(); await tick(); const incidents = fs.readFileSync(path.join(state, 'incidents.jsonl'), 'utf8'); assert.match(incidents, /"kind":"outage"/); assert.match(incidents, /"kind":"recovered"/);
+    // #68: the recovery is in the log; the owner's chat had its one post about this problem.
+    assert.doesNotMatch(fs.readFileSync(path.join(state, 'reports'), 'utf8'), /Wizard is working again/);
   } finally { api.close(); ts.close(); }
 });
 

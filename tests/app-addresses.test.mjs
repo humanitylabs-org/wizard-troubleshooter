@@ -153,3 +153,28 @@ test('the guardian heals a downgraded address within two runs, even in report-on
   guard(); g = guard();
   assert.equal(JSON.parse(g.stdout.trim().split('\n').pop()).actions.length, 0);
 });
+
+// #68/#69 (25 Nov 2026): during the Money→Finances rename the registry said `/` for six minutes; the check remembered
+// it and flagged the correct `/money/` for 19 hours, a false alarm `wam links` could never clear.
+test('a remembered `/` never beats the registered path: it passes and re-learns the registry', () => {
+  const b = box({ extra: [app('finances', '/money/')] });
+  const r = inspect(b.files, { finances: '/', messenger: '/messenger/' });
+  assert.equal(r.ok, true, r.detail);
+  assert.equal(r.remembered.finances, '/money/');
+});
+
+test('a rename from one Wizard path to another is learned at once, with no problem', () => {
+  const b = box({ links: '/messenger/', apps: '/chat/', shared: '/chat/' });
+  const r = inspect(b.files, { messenger: '/messenger/' });
+  assert.equal(r.ok, true, r.detail);
+  assert.equal(r.remembered.messenger, '/chat/');
+});
+
+test('`/` and a path another app is registered at are never learned as an app address', () => {
+  const b = box({ links: '/', apps: '/', shared: '/', extra: [app('notes', '/files/')] });
+  const r = inspect(b.files, {});
+  assert.equal(r.ok, true);
+  assert.equal(r.remembered.messenger, undefined, 'the Wizard shell is not an app address');
+  assert.equal(r.remembered.files, undefined, 'two apps on /files/: neither owns it');
+  assert.equal(r.remembered.notes, undefined);
+});
