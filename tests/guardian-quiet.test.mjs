@@ -31,7 +31,9 @@ async function box(t, { registered, remembered, wamFixes = false }) {
   fs.writeFileSync(wam, `#!${process.execPath}
 const fs = require('fs');
 if (${wamFixes}) for (const p of ${JSON.stringify(regs)}) { const r = JSON.parse(fs.readFileSync(p, 'utf8')); r.apps[0].view.url = '/money/'; fs.writeFileSync(p, JSON.stringify(r)); }
-console.log(JSON.stringify({ links: [], errors: {} }));
+// A wam that can't fix it reports why (#69: a clean run that changes nothing means the memory is stale, not an outage).
+console.log(JSON.stringify({ links: [], errors: ${wamFixes} ? {} : { finances: 'kept: existing Serve route differs' } }));
+process.exit(${wamFixes} ? 0 : 1);
 `, { mode: 0o755 });
   const reports = path.join(dir, 'reports');
   fs.writeFileSync(path.join(home, '.hermes/hermes-agent/venv/bin/python'), `#!${process.execPath}\nconst fs=require('node:fs');fs.appendFileSync(${JSON.stringify(reports)}, '=== post\\n'+fs.readFileSync(process.argv.at(-1),'utf8')+'\\n');\n`, { mode: 0o755 });
