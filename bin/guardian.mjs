@@ -3,7 +3,9 @@
 // For each broken link it restarts the piece, undoes a fresh Agent Service update if a restart doesn't help,
 // and as a last resort starts a Troubleshooter repair through the box's Claude/ChatGPT/Tinfoil connection apps.
 // GUARDIAN_ACT=0 (or --dry-run) makes it report-only.
-// Every action is logged to the incident log and reported once in the owner's Wizard thread.
+// Every action is logged to the incident log (the Troubleshooter page shows it). The owner's Wizard thread hears
+// only what he must act on (#68): a sign-in to renew, a restart only he can confirm, or an outage repairs did not
+// clear in a day. One post per problem a day at most, never a running commentary of restarts and repairs.
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -11,6 +13,7 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import { CONFIG, CHECKS, ACTIONS, runChecks, doAction, deployInProgress, lastAgentRelease, logIncident, run, hermesRestartState } from '../lib/checks.mjs';
 import '../lib/switches.mjs'; // clears stored values of retired switches
+import { listPlans } from '../lib/repair-plan.mjs';
 import { gatherEvidence, nameCause, causeKey, causeText, limitActive, agentHealth, hotfixIssue, fileHotfix, fixLive } from '../lib/outage-cause.mjs';
 
 const STATE = path.join(CONFIG.stateDir, 'guardian.json');
@@ -27,6 +30,12 @@ const RESTART_PAUSE = HOUR; // ...is not repeated for this long; the guardian es
 const RECUR_WINDOW = 2 * HOUR; // the same check failing again this soon means the last "recovery" fixed nothing
 const BUSY_NOTE_GAP = 30 * 60e3; // at most one "Hermes is slow" note per half hour, however often it flaps
 export const BUSY_TEXT = 'Hermes is taking a long time to accept new messages; your messages are queued and will send.';
+// #68 (26 Nov 2026: 37 posts in 19 h about one false alarm; James: "Please do not put these in my inbox if nothing
+// is needed from me."). Restarts, repairs, pauses and named causes go to the incident log only. The owner's thread
+// gets a problem once a day at most, and an outage the guardian can't clear only after it has lasted this long.
+export const OWNER_AFTER = +(process.env.GUARDIAN_OWNER_AFTER_H || 24) * HOUR;
+const POST_AGAIN = 24 * HOUR;
+const OWN_POST = ['agent-reply', 'agent-signin', 'replies-start']; // these have their own owner message
 const STALL_ASK_AFTER = 5 * 60e3; // replies not starting this long, and the repair chat has not cleared it: ask the owner
 
 // Replies not starting while Hermes says it is fine (8 Nov 2026). The guardian never restarts Hermes for this
@@ -153,6 +162,32 @@ export function guardianToken() {
   return t;
 }
 
+// The one way into the owner's thread: one post per problem (once per outage, and not again within a day after it
+// ends and comes back), whatever happens every minute in between.
+export function postDue(s, problem, now) {
+  if (s.outage?.told?.includes(problem)) return false;
+  return !(s.posted?.[problem] && now - s.posted[problem] < POST_AGAIN);
+}
+async function postOnce(s, problem, body, now) {
+  s.posted ||= {};
+  for (const [k, t] of Object.entries(s.posted)) if (now - t >= POST_AGAIN) delete s.posted[k];
+  if (!postDue(s, problem, now)) return false;
+  if (!await postThread(`guardian-${problem}-${now}`, body)) return false;
+  s.posted[problem] = now;
+  if (s.outage) s.outage.told = [...(s.outage.told || []), problem];
+  return true;
+}
+// An outage restarts and the repair chat have not cleared for OWNER_AFTER: the one thing the owner can do. A repair
+// plan waiting for his OK is a decision only he can make; otherwise the repair chat is where he picks it up.
+export function stuckText(labels, hours, plan) {
+  const head = `**${labels.join(', ')} ${labels.length > 1 ? 'have' : 'has'} not been working for ${hours} hours, and Wizard could not fix ${labels.length > 1 ? 'them' : 'it'} by itself.**`;
+  return plan ? `${head} A repair is ready and needs your OK: open the Troubleshooter and tap Approve and run on "${plan.title}": /troubleshoot/${plan.conv ? `#r=${plan.conv}` : ''}`
+    : `${head} Open the Troubleshooter and tell its repair chat what you see: /troubleshoot/`;
+}
+function waitingPlan() {
+  try { const p = listPlans({ limit: 20 }).find(x => x.state === 'proposed'); return p ? { title: p.plan?.title || 'the proposed repair', conv: p.convId || '' } : null; } catch { return null; }
+}
+
 async function postThread(key, body) {
   if (!THREAD || DRY) return false;
   const f = path.join(CONFIG.stateDir, 'post.md');
@@ -197,7 +232,6 @@ async function pauseRestarts(s, c, hold, now, actionsTaken) {
     }
   }
   logIncident({ kind: 'restart-paused', check: c.id, until: hold.until, text: `${text} Details: /troubleshoot/` });
-  await postThread(`guardian-pause-${c.id}-${now}`, `**${text}** Details: /troubleshoot/`);
 }
 
 // #47: a repeat outage gets its cause named from the box's own evidence, contained (the
@@ -262,8 +296,7 @@ async function containRecurring(s, recurring, now) {
   if (DRY) { console.log(`[dry-run] cause: ${text}`); return contained; }
   const same = s.knownCause?.key === key;
   s.knownCause = { key, kind: cause.kind, text, since: same ? s.knownCause.since : now, issue: filed?.ref || '', url: filed?.url || '', checkedAt: now };
-  if (!same) await postThread(`guardian-cause-${key}`, `**${text}** Details: /troubleshoot/`);
-  return contained;
+  return contained; // shown on the Troubleshooter page (s.knownCause); nothing for the owner to do, so no post (#68)
 }
 // The owner's status ends when the filed fix is live (or after a week); checked at most every half hour.
 async function knownCauseDone(s, now) {
@@ -417,10 +450,9 @@ async function main() {
   const replyDown = core.find(c => c.id === 'agent-reply') || core.find(c => c.id === 'agent-signin');
   const signinFix = status.checks.find(c => c.id === 'agent-signin')?.howToFix || '';
   const serverLogin = status.checks.find(c => c.id === 'agent-signin')?.login === 'server';
-  if (replyDown && s.outage && !s.outage.reported) {
+  if (replyDown && s.outage) {
     const how = serverLogin ? `${signinFix} Details: /troubleshoot/` : 'Open the Troubleshooter and tap Sign in again to reconnect your account from this device: /troubleshoot/';
-    const reported = await postThread(`guardian-outage-${s.outage.since}`, `**Wizard can't reply: ${bare(replyDown.detail)}.** ${replyDown.id === 'agent-signin' && !serverLogin ? 'Open the Troubleshooter: /troubleshoot/' : how}`);
-    if (reported) s.outage.reported = true;
+    await postOnce(s, 'signin', `**Wizard can't reply: ${bare(replyDown.detail)}.** ${replyDown.id === 'agent-signin' && !serverLogin ? 'Open the Troubleshooter: /troubleshoot/' : how}`, now);
   }
   if (replyDown && !DRY && !s.outage?.repairStarted) {
     const r = await startAiRepair(`Wizard can't reply: ${replyDown.detail} Check which sign-in expired. Do not restart services to fix a sign-in. ${serverLogin ? `The agent's sign-in is the server's own Claude login, which the Claude app cannot renew; tell the owner: ${signinFix}` : 'Explain how to reconnect through the connection app from the phone.'} Do not change credentials.`);
@@ -454,7 +486,7 @@ async function main() {
       const text = draining ? `Replies haven't started for ${mins} min because your agent is waiting for other work to finish before it restarts. Open the Troubleshooter and tap Restart your agent now: /troubleshoot/`
         : `Replies haven't started for ${mins} min, though your agent says it is fine. Open the Troubleshooter and tap Restart your agent (Hermes) to confirm: /troubleshoot/`;
       logIncident({ kind: 'outage', text });
-      if (await postThread(`guardian-stall-${s.stall.since}`, `**${text}**`) && s.outage) s.outage.reported = true; // the recovery note follows
+      await postOnce(s, 'stall', `**${text}**`, now);
     }
   }
 
@@ -477,15 +509,16 @@ async function main() {
   if (s.outage && !stillCore.length) {
     const said = recoveryText(s.outage, now);
     logIncident({ kind: 'recovered', ...(said.ok ? {} : { ok: false, recurring: repeat + 1 }), text: said.log });
-    if (s.outage.reported) await postThread(`guardian-recovered-${s.outage.since}`, said.post);
-    s.outage = null;
+    s.outage = null; // logged only: the owner had nothing to do about the recovery (#68)
   }
-  if (actionsTaken.length) {
-    const lines = actionsTaken.map(a => a.action === 'ai-repair'
-      ? `- ${a.label}: restarts didn't fix it, so I've asked your Claude/ChatGPT subscription to repair it. Follow along: /troubleshoot/#r=${a.conversation}`
-      : `- ${a.label} stopped working (${bare(a.detail)}). I ${a.action.startsWith('rollback') ? 'undid the last update' : a.action === 'restart:app-addresses' ? 'repaired it' : a.action === 'force-restart:hermes' ? 'stopped the wait and restarted it' : 'restarted it'}: ${a.fixed ? (repeat ? `it works for now, but this is the ${ordinal(repeat + 1)} time in 2 hours, so it isn't fixed.` : 'it works again.') : a.pending ? 'it is finishing the replies in progress first, then comes back by itself.' : 'still not working, trying further steps.'}`);
-    if (s.outage) s.outage.reported = true;
-    await postThread(`guardian-${now}`, `**${repeat ? 'Wizard got going again, but the problem keeps coming back,' : 'Wizard fixed itself'}** at ${bkk(now)} (${ZONE_NAME}).\n\n${lines.join('\n')}\n\nAnything still wrong? Open the Troubleshooter: /troubleshoot/`);
+  // Restarts and repairs above are in the incident log. The owner hears about an outage only once it has outlasted
+  // them for OWNER_AFTER, with the one thing he can do; sign-ins and stalled replies have their own message above.
+  const stuckNow = stillCore.filter(c => !OWN_POST.includes(c.id));
+  if (s.outage && stuckNow.length && now - s.outage.since >= OWNER_AFTER) {
+    const ids = stuckNow.map(c => c.id).sort().join('+');
+    if (DRY) console.log(`[dry-run] still down after ${Math.round((now - s.outage.since) / HOUR)} h: would tell the owner`);
+    else if (await postOnce(s, `down-${ids}`, stuckText(stuckNow.map(c => c.label), Math.round((now - s.outage.since) / HOUR), waitingPlan()), now))
+      logIncident({ kind: 'owner-asked', checks: stuckNow.map(c => c.id), text: `Restarts and repairs have not fixed ${stuckNow.map(c => c.label).join(', ')} for a day, so Wizard told you in your Wizard chat.` });
   }
   save(s);
   console.log(JSON.stringify({ overall: status.overall, failing: failing.map(f => f.id), busy: status.checks.filter(c => c.busy).map(c => c.id), actions: actionsTaken.map(a => `${a.action}:${a.fixed}`) }));

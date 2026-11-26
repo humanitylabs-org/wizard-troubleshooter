@@ -170,13 +170,15 @@ test('guardian: a dead agent sign-in is an outage, restarts nothing, and tells t
   const py = path.join(e.HOME, '.hermes/hermes-agent/venv/bin/python'); fs.mkdirSync(path.dirname(py), { recursive: true });
   fs.writeFileSync(py, `#!${NODE}\nconst fs=require('node:fs');fs.appendFileSync(${JSON.stringify(path.join(state, 'reports'))}, fs.readFileSync(process.argv.at(-1),'utf8')+'\\n');\n`, { mode: 0o755 });
   try {
-    const p = spawn(NODE, ['bin/guardian.mjs'], { cwd: ROOT, env: e, stdio: ['ignore', 'pipe', 'pipe'] }); let err = ''; p.stderr.on('data', d => err += d);
-    assert.equal(await new Promise(r => p.on('exit', r)), 0, err);
+    for (let i = 0; i < 2; i++) { // #68: the next minute (and hour) of the same dead sign-in posts nothing more
+      const p = spawn(NODE, ['bin/guardian.mjs'], { cwd: ROOT, env: e, stdio: ['ignore', 'pipe', 'pipe'] }); let err = ''; p.stderr.on('data', d => err += d);
+      assert.equal(await new Promise(r => p.on('exit', r)), 0, err);
+    }
     const incidents = fs.readFileSync(path.join(state, 'incidents.jsonl'), 'utf8');
     assert.match(incidents, /"kind":"outage"/); assert.doesNotMatch(incidents, /"kind":"auto-fix"/);
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(state, 'guardian.json'))).fixes, {});
     const reports = fs.readFileSync(path.join(state, 'reports'), 'utf8');
-    assert.match(reports, /Wizard can't reply/); assert.match(reports, /run `claude`, then `\/login`/); assert.doesNotMatch(reports, /tap Sign in again/);
+    assert.equal((reports.match(/Wizard can't reply/g) || []).length, 1, 'one post naming the sign-in'); assert.match(reports, /run `claude`, then `\/login`/); assert.doesNotMatch(reports, /tap Sign in again/);
     assert.equal(repairs, 1); assert.equal(b.calls.chat, 0, 'off means no reply messages');
   } finally { api.close(); b.close(); }
 });
